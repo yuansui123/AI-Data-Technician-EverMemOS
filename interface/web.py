@@ -223,18 +223,36 @@ HTML = """<!DOCTYPE html>
   #lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px;
                   box-shadow: 0 0 40px rgba(0,0,0,.8); }
 
+  /* Generic plot modal — interactive Plotly popup, no buttons */
+  #plot-modal { display: none; position: fixed; inset: 0; z-index: 940;
+                background: rgba(0,0,0,.92); align-items: center; justify-content: center;
+                padding: 16px; }
+  #plot-modal.open { display: flex; }
+  #plot-modal-card { background: #1a1d27; border: 1px solid #2d3147; border-radius: 12px;
+                     padding: 16px; width: 96vw; height: 94vh;
+                     display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  #plot-modal-header { display: flex; justify-content: space-between; align-items: center;
+                       flex-shrink: 0; }
+  #plot-modal-title { font-size: 13px; font-weight: 600; color: #c4b5fd; }
+  #plot-modal-close { background: none; border: none; color: #6b7280; cursor: pointer;
+                      font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+  #plot-modal-close:hover { color: #e2e8f0; background: #2d3147; }
+  #plot-modal-chart { width: 100%; flex: 1; min-height: 0; }
+
   /* Label modal — interactive signal labelling popup */
   #label-modal { display: none; position: fixed; inset: 0; z-index: 950;
-                 background: rgba(0,0,0,.88); align-items: center; justify-content: center; }
+                 background: rgba(0,0,0,.92); align-items: center; justify-content: center;
+                 padding: 16px; }
   #label-modal.open { display: flex; }
   #label-modal-card { background: #1a1d27; border: 1px solid #2d3147; border-radius: 12px;
-                      padding: 20px; max-width: min(820px, 92vw); width: 100%;
-                      display: flex; flex-direction: column; gap: 12px; }
+                      padding: 16px; width: 96vw; height: 94vh;
+                      display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   #label-modal-header { display: flex; justify-content: space-between;
-                        font-size: 12px; color: #6b7280; font-family: 'Consolas', monospace; }
-  #label-modal-plot { width: 100%; height: 360px; }
-  #label-modal-context { font-size: 12px; color: #94a3b8; }
-  #label-modal-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+                        font-size: 12px; color: #6b7280; font-family: 'Consolas', monospace;
+                        flex-shrink: 0; }
+  #label-modal-btns { display: flex; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+  #label-modal-plot { width: 100%; flex: 1; min-height: 0; }
+  #label-modal-context { font-size: 12px; color: #94a3b8; flex-shrink: 0; }
   .lbl-btn { padding: 10px 22px; border: none; border-radius: 6px; cursor: pointer;
              font-size: 14px; font-weight: 600; transition: transform .1s, box-shadow .1s; }
   .lbl-btn:hover { transform: scale(1.04); box-shadow: 0 0 10px rgba(0,0,0,.4); }
@@ -288,15 +306,25 @@ HTML = """<!DOCTYPE html>
   <img id="lightbox-img" src="" alt="">
 </div>
 
+<div id="plot-modal">
+  <div id="plot-modal-card">
+    <div id="plot-modal-header">
+      <span id="plot-modal-title"></span>
+      <button id="plot-modal-close" onclick="closePlotModal()">✕</button>
+    </div>
+    <div id="plot-modal-chart"></div>
+  </div>
+</div>
+
 <div id="label-modal">
   <div id="label-modal-card">
     <div id="label-modal-header">
       <span id="label-modal-progress"></span>
       <span id="label-modal-id"></span>
     </div>
-    <div id="label-modal-plot"></div>
     <div id="label-modal-context"></div>
     <div id="label-modal-btns"></div>
+    <div id="label-modal-plot"></div>
   </div>
 </div>
 
@@ -326,7 +354,7 @@ function closeLightbox() {
   document.getElementById('lightbox-img').src = '';
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLightbox(); closePlotModal(); } });
 
 function plotImgHtml(absPath) {
   const url = imgUrl(absPath);
@@ -543,6 +571,10 @@ function handleEvent(ev) {
       document.getElementById('activity-log').scrollTop = 99999;
     }
 
+  } else if (ev.type === 'show_plot') {
+    clearThinkingEntry();
+    showPlotModal(ev);
+
   } else if (ev.type === 'label_signal') {
     clearThinkingEntry();
     showLabelModal(ev);
@@ -563,6 +595,27 @@ function handleEvent(ev) {
 function clearThinkingEntry() {
   if (thinkingEntry) { thinkingEntry.remove(); thinkingEntry = null; }
 }
+
+function showPlotModal(ev) {
+  document.getElementById('plot-modal-title').textContent = ev.title || 'Plot';
+  const fig = JSON.parse(ev.plot_json);
+  Plotly.newPlot('plot-modal-chart', fig.data, fig.layout, {
+    responsive: true,
+    displayModeBar: true,
+    modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+    toImageButtonOptions: {format: 'png', filename: (ev.title || 'plot').replace(/\s+/g, '_')},
+  });
+  document.getElementById('plot-modal').classList.add('open');
+}
+
+function closePlotModal() {
+  document.getElementById('plot-modal').classList.remove('open');
+  Plotly.purge('plot-modal-chart');
+}
+
+document.getElementById('plot-modal').addEventListener('click', function(e) {
+  if (e.target === this) closePlotModal();
+});
 
 function showLabelModal(ev) {
   document.getElementById('label-modal-progress').textContent = ev.progress || '';

@@ -69,21 +69,33 @@ async def teach_session(
             view_desc = "default"
 
         if view_desc.lower() not in ("default", "skip", ""):
-            await on_event({"type": "ask_user",
-                            "question": "Generating plot layout — one moment..."})
             import numpy as np
             rng_preview = np.random.default_rng()
             preview_mat = mat_files[rng_preview.integers(len(mat_files))]
             dims = await _get_dims(preview_mat, bash, project_dir)
+
+            # Emit progress to activity log
+            await on_event({"type": "sub_tool_call", "subagent": "teach_session",
+                            "tool": "generate_plot_script",
+                            "input": {"view": view_desc[:120], "ref_file": _extract_ref_filename(view_desc)}})
             plot_script = await _generate_plot_script(
                 view_desc, project_dir, preview_mat, dims, bash, project_dir
             )
             if plot_script:
+                lines = plot_script.count("\n") + 1
+                await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                "tool": "generate_plot_script",
+                                "result": f"Generated {lines}-line plot script"})
                 # Preview
                 tr_p = int(rng_preview.integers(dims[2])) if dims else 0
                 ch_p = int(rng_preview.integers(dims[1])) if dims else 0
+                await on_event({"type": "sub_tool_call", "subagent": "teach_session",
+                                "tool": "run_plot_script",
+                                "input": {"mat": preview_mat.name, "ch": ch_p, "tr": tr_p}})
                 preview_json, preview_err = await _run_plot_script(plot_script, preview_mat, ch_p, tr_p, bash, project_dir)
                 if preview_json:
+                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                    "tool": "run_plot_script", "result": "Plot rendered OK"})
                     await on_event({"type": "show_plot", "plot_json": preview_json,
                                     "title": f"Preview — {preview_mat.stem} tr{tr_p}"})
                     await on_event({"type": "ask_user",
@@ -94,26 +106,44 @@ async def teach_session(
                             plot_script = None
                         elif confirm != "yes":
                             # Try to refine based on feedback
-                            await on_event({"type": "ask_user",
-                                            "question": "Refining plot layout — one moment..."})
+                            await on_event({"type": "sub_tool_call", "subagent": "teach_session",
+                                            "tool": "generate_plot_script",
+                                            "input": {"view": confirm[:120], "refining": True}})
                             plot_script = await _generate_plot_script(
                                 confirm, project_dir, preview_mat, dims, bash, project_dir,
                                 prior_script=plot_script,
                             )
                             if plot_script:
+                                await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                                "tool": "generate_plot_script",
+                                                "result": f"Refined script ({plot_script.count(chr(10))+1} lines)"})
+                                await on_event({"type": "sub_tool_call", "subagent": "teach_session",
+                                                "tool": "run_plot_script",
+                                                "input": {"mat": preview_mat.name, "ch": ch_p, "tr": tr_p}})
                                 refined_json, refined_err = await _run_plot_script(plot_script, preview_mat, ch_p, tr_p, bash, project_dir)
                                 if refined_json:
+                                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                                    "tool": "run_plot_script", "result": "Refined plot OK"})
                                     await on_event({"type": "show_plot", "plot_json": refined_json,
                                                     "title": f"Refined preview — {preview_mat.stem}"})
                                 else:
+                                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                                    "tool": "run_plot_script", "result": f"FAILED: {refined_err}"})
                                     await on_event({"type": "ask_user",
                                                     "question": f"⚠️ Refined script failed ({refined_err}). Keeping previous layout."})
                     except asyncio.TimeoutError:
                         pass  # keep current plot_script
                 else:
+                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                    "tool": "run_plot_script", "result": f"FAILED: {preview_err}"})
                     await on_event({"type": "ask_user",
                                     "question": f"⚠️ Plot script failed to run — falling back to default single-channel view.\n\n`{preview_err}`"})
                     plot_script = None
+            else:
+                await on_event({"type": "sub_tool_result", "subagent": "teach_session",
+                                "tool": "generate_plot_script", "result": "FAILED: LLM returned empty code"})
+                await on_event({"type": "ask_user",
+                                "question": "⚠️ Could not generate plot script — falling back to default single-channel view."})
 
     # Load existing labels
     existing: dict = {}
@@ -215,6 +245,13 @@ async def teach_session(
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+def _extract_ref_filename(description: str) -> str | None:
+    """Return just the filename if description references a file path, else None."""
+    import re
+    m = re.search(r'[A-Za-z]:[\\\/][^\s\'"*?]+\.(py|m|txt|md)', description)
+    return Path(m.group(0)).name if m else None
+
 
 def _find_mat_files(data_dir) -> list[Path]:
     if not data_dir:
