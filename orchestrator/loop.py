@@ -32,7 +32,11 @@ ORCHESTRATOR_TOOLS = [
     },
     {
         "name": "ingest_documents",
-        "description": "Parse PDFs, CSVs or text files and extract metadata/content into project context.",
+        "description": (
+            "Read PDFs or text documents and synthesise their content into project_summary.md "
+            "via the Think subagent. Use for research papers, protocol descriptions, README files. "
+            "NOT for .mat, .m, .py, or binary data files — use read_file for those."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -44,6 +48,30 @@ ORCHESTRATOR_TOOLS = [
                 "data_dir": {"type": "string", "description": "Optional: directory to scan for files"},
             },
             "required": [],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": (
+            "Read any file and return its raw content — deterministic, no LLM. "
+            "Use this to inspect scripts (.py, .m), config files, CSVs, text files, or any file "
+            "whose content you need to see. Returns up to max_chars characters (default 8000). "
+            "For .mat binary data files use explore_dataset instead."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute path to the file"},
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Max characters to return (default 8000)",
+                },
+                "offset_chars": {
+                    "type": "integer",
+                    "description": "Skip first N characters (for paging through large files)",
+                },
+            },
+            "required": ["path"],
         },
     },
     {
@@ -294,6 +322,21 @@ class OrchestratorToolExecutor:
                 inp.get("file_paths", []), p, self.memory_backend,
                 inp.get("data_dir"), self.carry
             )
+
+        if tool_name == "read_file":
+            path = Path(inp["path"])
+            max_chars = int(inp.get("max_chars", 8000))
+            offset = int(inp.get("offset_chars", 0))
+            if not path.exists():
+                return {"response": f"File not found: {path}"}
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                return {"response": f"Could not read {path.name}: {e}"}
+            chunk = text[offset: offset + max_chars]
+            remaining = max(0, len(text) - offset - max_chars)
+            footer = f"\n\n[{remaining} more characters — call read_file with offset_chars={offset + max_chars}]" if remaining else ""
+            return {"response": f"```{path.suffix.lstrip('.')}\n{chunk}\n```{footer}"}
 
         if tool_name == "optimize_pattern":
             from workflows.optimize_pattern import optimize_pattern
