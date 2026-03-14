@@ -66,15 +66,25 @@ async def create_project(name: str):
     return {"name": safe}
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 @app.get("/files")
 async def serve_file(path: str):
-    """Serve image files inside the projects directory."""
+    """Serve image files inside the projects directory or system temp."""
     import config
+    import tempfile
     full_path = Path(path).resolve()
-    projects_root = Path(config.PROJECTS_DIR).resolve()
-    try:
-        full_path.relative_to(projects_root)
-    except ValueError:
+    allowed_roots = [
+        Path(config.PROJECTS_DIR).resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    if not any(_is_under(full_path, root) for root in allowed_roots):
         raise HTTPException(status_code=403, detail="Access denied")
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Not found")
@@ -178,6 +188,21 @@ HTML = """<!DOCTYPE html>
   #send-btn:hover { background: #4338ca; }
   #send-btn:disabled { background: #374151; cursor: not-allowed; }
 
+  /* Todo panel (sticky at top of activity) */
+  #todo-panel { border-bottom: 1px solid #2d3147; font-size: 12px; font-family: 'Consolas', monospace; }
+  #todo-panel:empty { display: none; }
+  #todo-panel .todo-header { padding: 8px 12px 4px; font-size: 10px; font-weight: 600;
+                              color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+  #todo-panel .todo-item { padding: 3px 12px; display: flex; align-items: center; gap: 8px;
+                            line-height: 1.5; transition: background 0.3s; }
+  #todo-panel .todo-item.pending { color: #6b7280; }
+  #todo-panel .todo-item.running { color: #818cf8; background: #1a2235; }
+  #todo-panel .todo-item.done { color: #4ade80; }
+  #todo-panel .todo-item.failed { color: #f87171; }
+  #todo-panel .todo-icon { width: 16px; text-align: center; flex-shrink: 0; }
+  #todo-panel .todo-item.done .todo-title { text-decoration: line-through; opacity: 0.7; }
+  #todo-panel .todo-item:last-child { padding-bottom: 8px; }
+
   /* Activity panel */
   #activity { width: 360px; display: flex; flex-direction: column; }
   #activity-header { padding: 10px 16px; font-size: 11px; font-weight: 600;
@@ -210,6 +235,8 @@ HTML = """<!DOCTYPE html>
   .activity-item .plot-img { display: block; max-width: 100%; border-radius: 4px;
                               margin-top: 6px; cursor: zoom-in; border: 1px solid #2d3147; }
   .activity-item .plot-img:hover { border-color: #4f46e5; }
+  .activity-plot-container { width: 100%; height: 200px; margin-top: 6px; border-radius: 4px;
+                              overflow: hidden; border: 1px solid #2d3147; }
 
   /* Plot images in main chat */
   .msg.assistant .plot-img { display: block; max-width: 100%; border-radius: 6px;
@@ -357,8 +384,9 @@ HTML = """<!DOCTYPE html>
     <div id="activity-header">
       <span>Activity Log</span>
     </div>
+    <div id="todo-panel"></div>
     <div id="activity-log"></div>
-    <button id="clear-btn" onclick="document.getElementById('activity-log').innerHTML=''">Clear log</button>
+    <button id="clear-btn" onclick="document.getElementById('activity-log').innerHTML=''; document.getElementById('todo-panel').innerHTML='';">Clear log</button>
   </div>
 </div>
 
@@ -617,6 +645,10 @@ function handleEvent(ev) {
 
   } else if (ev.type === 'tool_call') {
     clearThinkingEntry();
+    // Update todo panel live when orchestrator writes todos
+    if (ev.tool === 'todo_write' && ev.input && ev.input.todos) {
+      updateTodoPanel(ev.input.todos);
+    }
     const imgP = ev.tool === 'vision_analyze' ? (ev.input && ev.input.image_path) : null;
     logActivity('tool_call', ev.tool, formatInput(ev.tool, ev.input), imgP);
     setStatus('thinking', `Running ${ev.tool}...`);
@@ -684,6 +716,7 @@ function handleEvent(ev) {
 
   } else if (ev.type === 'show_plot') {
     clearThinkingEntry();
+    logPlotToActivity(ev);
     showPlotModal(ev);
 
   } else if (ev.type === 'label_signal') {
@@ -1140,6 +1173,42 @@ function logActivity(type, label, detail, imgPath) {
   div.innerHTML = `<div class="label">${icon} ${escHtml(label)}</div>${detailHtml}${imgHtml}`;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+}
+
+function updateTodoPanel(todos) {
+  const panel = document.getElementById('todo-panel');
+  if (!todos || !todos.length) { panel.innerHTML = ''; return; }
+  const icons = {pending: '○', running: '◉', done: '✓', failed: '✗'};
+  const items = todos.map(t => {
+    const s = t.status || 'pending';
+    const icon = icons[s] || '○';
+    return `<div class="todo-item ${s}"><span class="todo-icon">${icon}</span><span class="todo-title">${escHtml(t.title || t.id)}</span></div>`;
+  }).join('');
+  panel.innerHTML = `<div class="todo-header">Tasks</div>${items}`;
+}
+
+function logPlotToActivity(ev) {
+  const log = document.getElementById('activity-log');
+  const div = document.createElement('div');
+  div.className = 'activity-item show_plot';
+  const title = ev.title || 'Plot';
+  div.innerHTML = `<div class="label">📊 ${escHtml(title)}</div>` +
+    `<div class="activity-plot-container" id="activity-plot-${Date.now()}"></div>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  // Render a small Plotly chart in the activity log
+  try {
+    const fig = JSON.parse(ev.plot_json);
+    if (fig.layout) {
+      fig.layout.height = 200;
+      fig.layout.margin = {l:30, r:10, t:20, b:30};
+      fig.layout.showlegend = false;
+    }
+    const container = div.querySelector('.activity-plot-container');
+    Plotly.newPlot(container, fig.data, fig.layout, {
+      responsive: true, displayModeBar: false, staticPlot: true
+    });
+  } catch(e) {}
 }
 
 function logSubActivity(type, subagent, tool, detail, imgPath) {

@@ -11,6 +11,7 @@ env = { PYTHONNOUSERSITE = "1" }
 [tasks]
 start = "python main.py"
 web = "python main.py --web"
+webdebug = "python main.py --web --debug"
 
 [dependencies]
 python = "3.11.*"
