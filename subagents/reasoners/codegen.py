@@ -18,6 +18,40 @@ def _load_prompt() -> str:
 
 # ── write_and_run tool definition ─────────────────────────────────────────────
 
+BASH_TOOL: dict = {
+    "name": "bash_execute",
+    "description": (
+        "Execute a shell command via Windows PowerShell. "
+        "Use this to inspect .mat file structure, check array shapes, list directory contents, "
+        "or run any exploratory Python snippet before writing the full plot script."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "Shell command to execute"},
+            "cwd": {"type": "string", "description": "Working directory (optional)"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"},
+        },
+        "required": ["command"],
+    },
+}
+
+READ_FILE_TOOL: dict = {
+    "name": "read_file",
+    "description": (
+        "Read any text file and return its contents. "
+        "Use this to inspect reference scripts (.py, .m), config files, or any file you need to understand."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute path to the file"},
+            "max_chars": {"type": "integer", "description": "Max characters to return (default 8000)"},
+        },
+        "required": ["path"],
+    },
+}
+
 WRITE_AND_RUN_TOOL: dict = {
     "name": "write_and_run",
     "description": (
@@ -52,9 +86,39 @@ class CodeGenExecutor:
         self.last_successful_body: str | None = None  # body of last run that produced valid JSON
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
-        if tool_name != "write_and_run":
-            return f"[CodeGenExecutor] Unknown tool: {tool_name}"
-        return await self._write_and_run(tool_input)
+        if tool_name == "write_and_run":
+            return await self._write_and_run(tool_input)
+        if tool_name == "bash_execute":
+            return await self._bash(tool_input)
+        if tool_name == "read_file":
+            return self._read_file(tool_input)
+        return f"[CodeGenExecutor] Unknown tool: {tool_name}"
+
+    async def _bash(self, inp: dict) -> str:
+        from subagents.primitives.bash import bash
+        result = await bash(
+            cmd=inp["command"],
+            cwd=inp.get("cwd", self.project_dir),
+            timeout=inp.get("timeout", 60),
+        )
+        out = result.stdout or ""
+        if result.stderr:
+            out += f"\n[stderr]\n{result.stderr}"
+        return out or "(no output)"
+
+    def _read_file(self, inp: dict) -> str:
+        path = Path(inp["path"])
+        max_chars = int(inp.get("max_chars", 8000))
+        if not path.exists():
+            return f"File not found: {path}"
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            return f"Could not read {path.name}: {e}"
+        chunk = text[:max_chars]
+        remaining = max(0, len(text) - max_chars)
+        footer = f"\n[{remaining} more chars — use offset_chars to page]" if remaining else ""
+        return chunk + footer
 
     async def _write_and_run(self, inp: dict) -> str:
         import base64
@@ -178,7 +242,7 @@ When done, output ONLY the final working script body."""
     sc = SubagentConfig(
         model=cfg.CODE_MODEL,
         system_prompt=_load_prompt(),
-        tools=[WRITE_AND_RUN_TOOL],
+        tools=[BASH_TOOL, READ_FILE_TOOL, WRITE_AND_RUN_TOOL],
         thinking_budget=0,
         max_iterations=cfg.CODEGEN_MAX_ITER,
         max_tokens=4096,
