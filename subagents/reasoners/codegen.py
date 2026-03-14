@@ -49,6 +49,7 @@ class CodeGenExecutor:
     def __init__(self, header: str, project_dir: str | None = None):
         self.header = header
         self.project_dir = project_dir
+        self.last_successful_body: str | None = None  # body of last run that produced valid JSON
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         if tool_name != "write_and_run":
@@ -86,6 +87,7 @@ class CodeGenExecutor:
             try:
                 parsed = _json.loads(plot_out)
                 if "data" in parsed and "layout" in parsed:
+                    self.last_successful_body = body  # save before returning
                     return f"SUCCESS: stdout is valid Plotly JSON ({len(plot_out)} chars)\n{plot_out[:200]}..."
                 return f"stdout is JSON but missing 'data' or 'layout' keys: {list(parsed.keys())}"
             except _json.JSONDecodeError:
@@ -205,13 +207,21 @@ When done, output ONLY the final working script body."""
     code = re.sub(r'\s*```$', '', code)
     code = code.strip()
 
-    if not code:
-        return None
+    # Syntax check — if the model returned natural language instead of code
+    # (common when it stops after seeing SUCCESS without a text turn), fall back
+    # to the last body that actually produced valid Plotly JSON during the loop.
+    if code:
+        try:
+            compile(code, "<codegen>", "exec")
+            return code
+        except SyntaxError:
+            pass
 
-    # Syntax check
-    try:
-        compile(code, "<codegen>", "exec")
-    except SyntaxError:
-        return None
+    if executor.last_successful_body:
+        try:
+            compile(executor.last_successful_body, "<codegen_fallback>", "exec")
+            return executor.last_successful_body
+        except SyntaxError:
+            pass
 
-    return code
+    return None
