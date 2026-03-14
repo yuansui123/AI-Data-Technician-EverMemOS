@@ -20,6 +20,7 @@ async def teach_session(
     answer_queue=None,
     plot_script: str | None = None,
     view_description: str | None = None,
+    ref_file_path: str | Path | None = None,
 ) -> dict:
     """Show signals one-by-one via modal popup, collect user labels.
 
@@ -80,11 +81,13 @@ async def teach_session(
             dims = await _get_dims(preview_mat, bash, project_dir)
 
             # Emit progress to activity log
+            _ref_name = (Path(ref_file_path).name if ref_file_path else _extract_ref_filename(view_desc))
             await on_event({"type": "sub_tool_call", "subagent": "teach_session",
                             "tool": "generate_plot_script",
-                            "input": {"view": view_desc[:120], "ref_file": _extract_ref_filename(view_desc)}})
+                            "input": {"view": view_desc[:120], "ref_file": _ref_name}})
             plot_script = await _generate_plot_script(
-                view_desc, project_dir, preview_mat, dims, bash, project_dir
+                view_desc, project_dir, preview_mat, dims, bash, project_dir,
+                ref_file_path=ref_file_path,
             )
             if plot_script:
                 lines = plot_script.count("\n") + 1
@@ -117,6 +120,7 @@ async def teach_session(
                             plot_script = await _generate_plot_script(
                                 confirm, project_dir, preview_mat, dims, bash, project_dir,
                                 prior_script=plot_script,
+                                ref_file_path=ref_file_path,
                             )
                             if plot_script:
                                 await on_event({"type": "sub_tool_result", "subagent": "teach_session",
@@ -400,6 +404,7 @@ async def _generate_plot_script(
     bash_fn,
     cwd,
     prior_script: str | None = None,
+    ref_file_path: str | Path | None = None,
 ) -> str | None:
     """Ask an LLM to write a Plotly plot_script from the user's description."""
     import re
@@ -412,18 +417,23 @@ async def _generate_plot_script(
     if summary_path.exists():
         summary = summary_path.read_text(encoding="utf-8")[:3000]
 
-    # Read any referenced file path mentioned in description
+    # Reference file: prefer explicit ref_file_path, fall back to path in description
     ref_code = ""
-    path_match = re.search(r'[A-Za-z]:[\\\/][^\s\'"*?]+\.(py|m|txt|md)', description)
-    if path_match:
-        ref_path = Path(path_match.group(0))
-        if ref_path.exists():
-            lang = "matlab" if ref_path.suffix == ".m" else "python"
-            note = " (MATLAB — translate the visualization logic to Python/Plotly)" if lang == "matlab" else ""
-            ref_code = (
-                f"\n\nReference file `{ref_path.name}`{note}:\n```{lang}\n"
-                f"{ref_path.read_text(errors='replace')[:5000]}\n```"
-            )
+    ref_path = None
+    if ref_file_path:
+        ref_path = Path(ref_file_path)
+    else:
+        path_match = re.search(r'[A-Za-z]:[\\\/][^\s\'"*?]+\.(py|m|txt|md)', description)
+        if path_match:
+            ref_path = Path(path_match.group(0))
+
+    if ref_path and ref_path.exists():
+        lang = "matlab" if ref_path.suffix == ".m" else "python"
+        note = " (MATLAB — translate the visualization logic to Python/Plotly)" if lang == "matlab" else ""
+        ref_code = (
+            f"\n\nReference file `{ref_path.name}`{note}:\n```{lang}\n"
+            f"{ref_path.read_text(errors='replace')[:6000]}\n```"
+        )
 
     T, C, N = dims if dims else ("?", "?", "?")
     prior_section = (
@@ -455,6 +465,7 @@ h5py keys: `epoched_data` (T×C×N), `time` (T,), `new_elect_vals` (C,) — elec
 3. Dark theme: `paper_bgcolor='#0d1117'`, `plot_bgcolor='#161b22'`, `font=dict(color='#e2e8f0')`
 4. End with exactly: `print(json.dumps(fig))`
 5. Import json at the top
+6. Keep the script self-contained and complete — do not truncate
 
 Return ONLY raw Python code — no markdown fences, no explanation."""
 
@@ -462,7 +473,7 @@ Return ONLY raw Python code — no markdown fences, no explanation."""
     sc = SubagentConfig(
         model=cfg.CODE_MODEL,
         system_prompt="You are a Python code generator. Return only raw Python code with no markdown fences or explanation.",
-        max_tokens=3000 if has_ref else 2000,
+        max_tokens=4000 if has_ref else 2500,
         max_iterations=1,
     )
     result = await invoke(sc, [{"role": "user", "content": prompt}])
@@ -470,4 +481,12 @@ Return ONLY raw Python code — no markdown fences, no explanation."""
     # Strip accidental markdown fences
     code = re.sub(r'^```\w*\s*', '', code)
     code = re.sub(r'\s*```$', '', code)
-    return code.strip() or None
+    code = code.strip()
+    if not code:
+        return None
+    # Syntax-check before returning — catch truncated/broken code early
+    try:
+        compile(code, "<generated>", "exec")
+    except SyntaxError as e:
+        return None  # caller will surface this as a generation failure
+    return code

@@ -102,10 +102,17 @@ ORCHESTRATOR_TOOLS = [
                 "view_description": {
                     "type": "string",
                     "description": (
-                        "Optional: how the user wants signals displayed. Pass any view preference the user "
-                        "mentioned, e.g. 'all channels stacked', 'similar to C:\\path\\to\\file.py', "
-                        "'MTL channels only'. The workflow will generate a matching Plotly layout. "
+                        "Optional: free-text description of how signals should be displayed, "
+                        "e.g. 'all channels stacked with 1000-unit offset', 'MTL channels only'. "
                         "If omitted the workflow will ask the user."
+                    ),
+                },
+                "ref_file_path": {
+                    "type": "string",
+                    "description": (
+                        "Optional: absolute path to a reference script (.py or .m) the user wants "
+                        "the display to mimic. Pass this whenever the user says 'similar to <path>'. "
+                        "Pass the raw file path here — do NOT embed it inside view_description."
                     ),
                 },
                 "plot_script": {
@@ -352,6 +359,7 @@ class OrchestratorToolExecutor:
                 answer_queue=self.answer_queue,
                 plot_script=inp.get("plot_script"),
                 view_description=inp.get("view_description"),
+                ref_file_path=inp.get("ref_file_path"),
             )
 
         if tool_name == "review_results":
