@@ -9,6 +9,10 @@ import asyncio
 import json
 from pathlib import Path
 
+# Default Plotly reference script — used when the agent doesn't pass an explicit ref_file_path.
+# CodeGen reads this as a style guide so it knows the expected output format.
+_DEFAULT_PLOT_REF = Path(__file__).resolve().parent.parent / "tmpt" / "trial_view_plotly.py"
+
 
 async def teach_session(
     project_dir: str | Path,
@@ -84,6 +88,7 @@ async def teach_session(
             ch_p = int(rng_preview.integers(dims[1])) if dims else 0
 
             # CodeGen: generate → run → fix loop (shows progress in activity log via on_event)
+            _ref = ref_file_path or (_DEFAULT_PLOT_REF if _DEFAULT_PLOT_REF.exists() else None)
             plot_script = await codegen(
                 description=view_desc,
                 mat_path=preview_mat,
@@ -91,7 +96,7 @@ async def teach_session(
                 tr_idx=tr_p,
                 project_dir=project_dir,
                 dims=dims,
-                ref_file_path=ref_file_path,
+                ref_file_path=_ref,
                 on_event=on_event,
             )
             if plot_script:
@@ -101,7 +106,8 @@ async def teach_session(
                 )
                 if preview_json:
                     await on_event({"type": "show_plot", "plot_json": preview_json,
-                                    "title": f"Preview — {preview_mat.stem} tr{tr_p}"})
+                                    "title": f"Preview — {preview_mat.stem} tr{tr_p}",
+                                    "trial_idx": tr_p})
                     await on_event({"type": "ask_user",
                                     "question": "Does this layout look good? Reply `yes` to start, `default` to use single-channel, or describe a change."})
                     try:
@@ -117,7 +123,7 @@ async def teach_session(
                                 tr_idx=tr_p,
                                 project_dir=project_dir,
                                 dims=dims,
-                                ref_file_path=ref_file_path,
+                                ref_file_path=_ref,
                                 prior_script=plot_script,
                                 on_event=on_event,
                             )
@@ -127,7 +133,8 @@ async def teach_session(
                                 )
                                 if refined_json:
                                     await on_event({"type": "show_plot", "plot_json": refined_json,
-                                                    "title": f"Refined preview — {preview_mat.stem}"})
+                                                    "title": f"Refined preview — {preview_mat.stem}",
+                                                    "trial_idx": tr_p})
                                 else:
                                     await on_event({"type": "ask_user",
                                                     "question": "⚠️ Refined script failed. Keeping previous layout."})

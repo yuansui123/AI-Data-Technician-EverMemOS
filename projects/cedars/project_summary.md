@@ -26,3 +26,19 @@
 - Pattern uniformity suggests the initial sample is drawn from a homogeneous region of the data distribution — no high-variability or mixed examples captured yet.
 - **Implication:** Next step should actively seek out high-variability or edge-case examples to diversify the label set and avoid a biased training signal.
 ```
+
+## Dataset Context
+MODE: compact
+
+---
+
+## Dataset & Recording Metadata
+
+- **File reviewed:** `sfc_mark_bad_trials_v3_viewing_only.m` — a MATLAB script for manually marking bad trials in neural signal data; format was flagged as unsupported, so **no content could be extracted**.
+- **Extracted metadata:** None — dataset description, recording protocol, sampling rate, channel count, artifact types, signal patterns, and labeling conventions **cannot be reported** without file content.
+- **Implication for next step:** To proceed, provide the file contents as plain text (copy-paste the MATLAB code), or supply accompanying documentation (e.g., a README, data sheet, or header file). Alternatively, share any of the following that are available:
+  - A `.mat`, `.csv`, `.txt`, or `.json` file with trial/channel metadata
+  - Comments or docstrings from the script
+  - A separate protocol document describing the recording setup
+
+> ⚠️ No data was invented. All fields (sampling rate, channel count, artifact labels, etc.) remain unknown until readable content is provided.

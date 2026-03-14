@@ -33,11 +33,28 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--web", action="store_true",
                    help="Start web UI at http://localhost:8000")
     p.add_argument("--port", type=int, default=8000, help="Web UI port (default: 8000)")
+    p.add_argument("--debug", action="store_true",
+                   help="Log all LLM inputs/outputs to logs/debug_<timestamp>.txt")
     return p.parse_args()
+
+
+def _setup_debug_log(args) -> None:
+    """If --debug, set AI_DT_DEBUG_LOG env var so subagents/base.py can find the path."""
+    if not args.debug:
+        return
+    import os
+    from datetime import datetime
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / f"debug_{ts}.txt"
+    os.environ["AI_DT_DEBUG_LOG"] = str(log_path)
+    print(f"[debug] LLM log → {log_path}")
 
 
 def main() -> None:
     args = parse_args()
+    _setup_debug_log(args)
 
     # Web mode — runs uvicorn directly (no asyncio.run needed)
     if args.web:

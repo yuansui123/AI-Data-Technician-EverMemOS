@@ -243,9 +243,9 @@ When done, output ONLY the final working script body."""
         model=cfg.CODE_MODEL,
         system_prompt=_load_prompt(),
         tools=[BASH_TOOL, READ_FILE_TOOL, WRITE_AND_RUN_TOOL],
-        thinking_budget=0,
+        thinking_budget=cfg.CODEGEN_THINKING_BUDGET,
         max_iterations=cfg.CODEGEN_MAX_ITER,
-        max_tokens=4096,
+        max_tokens=8000,
     )
 
     executor = CodeGenExecutor(header=header, project_dir=str(project_dir))

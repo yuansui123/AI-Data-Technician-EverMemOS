@@ -121,13 +121,20 @@ async def invoke(
         }
 
         if config.thinking_budget > 0:
-            kwargs["thinking"] = {"type": "adaptive"}
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": config.thinking_budget}
 
         if config.tools:
             kwargs["tools"] = config.tools
 
         # API call — stream text deltas when on_event is provided
+        def _retry_delay(_exc, _attempt: int) -> float:
+            if isinstance(_exc, anthropic.InternalServerError):
+                return 3.0 * (_attempt + 1)   # 3s, 6s, 9s, 12s
+            return 10.0 * (2 ** _attempt)      # 10s, 20s, 40s …
+
+        _debug_log_request(config, all_messages, iteration)
         text_parts: list[str] = []
+        _api_exc: Exception | None = None
         if on_event:
             for _attempt in range(6):
                 try:
@@ -136,21 +143,27 @@ async def invoke(
                             await on_event({"type": "text_delta", "delta": text})
                             text_parts.append(text)
                         response = await stream.get_final_message()
+                    _api_exc = None
                     break
                 except (anthropic.RateLimitError, anthropic.InternalServerError) as _exc:
+                    _api_exc = _exc
                     if _attempt == 5:
+                        _debug_log_error(config, _exc)
                         raise
                     text_parts.clear()
-                    await asyncio.sleep(10 * (2 ** _attempt))
+                    await asyncio.sleep(_retry_delay(_exc, _attempt))
         else:
             for _attempt in range(6):
                 try:
                     response = await client.messages.create(**kwargs)
+                    _api_exc = None
                     break
                 except (anthropic.RateLimitError, anthropic.InternalServerError) as _exc:
+                    _api_exc = _exc
                     if _attempt == 5:
+                        _debug_log_error(config, _exc)
                         raise
-                    await asyncio.sleep(10 * (2 ** _attempt))
+                    await asyncio.sleep(_retry_delay(_exc, _attempt))
         iteration += 1
 
         # accumulate usage
@@ -249,7 +262,7 @@ async def invoke(
                     total_usage["input_tokens"] += getattr(summary_response.usage, "input_tokens", 0)
                     total_usage["output_tokens"] += getattr(summary_response.usage, "output_tokens", 0)
 
-    return SubagentResult(
+    result = SubagentResult(
         text=final_text,
         thinking="\n\n".join(thinking_parts),
         tool_calls=all_tool_calls,
@@ -259,3 +272,103 @@ async def invoke(
             "total_tokens": total_usage["input_tokens"] + total_usage["output_tokens"],
         },
     )
+    _debug_log_result(config, result)
+    return result
+
+
+# ── Debug logging helpers ──────────────────────────────────────────────────────
+
+def _dbg_path() -> str | None:
+    import os
+    return os.environ.get("AI_DT_DEBUG_LOG")
+
+
+def _dbg_write(text: str) -> None:
+    path = _dbg_path()
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(text)
+    except Exception:
+        pass
+
+
+def _debug_log_request(config: "SubagentConfig", messages: list, iteration: int) -> None:
+    """Log what is about to be sent to the LLM."""
+    if not _dbg_path():
+        return
+    from datetime import datetime
+
+    def _fmt_content(content: Any) -> str:
+        if isinstance(content, list):
+            parts = []
+            for b in content:
+                if not isinstance(b, dict):
+                    continue
+                btype = b.get("type", "")
+                if btype == "text":
+                    parts.append(b.get("text", "")[:400])
+                elif btype == "tool_use":
+                    parts.append(f"[tool_use: {b.get('name')} input={json.dumps(b.get('input',{}))[:200]}]")
+                elif btype == "tool_result":
+                    parts.append(f"[tool_result: {str(b.get('content',''))[:200]}]")
+                else:
+                    parts.append(str(b)[:100])
+            return " | ".join(parts)
+        return str(content)[:600]
+
+    sep = "─" * 60
+    ts = datetime.now().strftime("%H:%M:%S")
+    lines = [
+        "",
+        "=" * 80,
+        f"[{ts}] REQUEST  model={config.model}  iter={iteration+1}/{config.max_iterations}",
+        "=" * 80,
+        "SYSTEM:",
+        (config.system_prompt[:800] + "…") if len(config.system_prompt) > 800 else config.system_prompt,
+        sep,
+        "MESSAGES:",
+    ]
+    for msg in messages:
+        role = msg.get("role", "?")
+        content = _fmt_content(msg.get("content", ""))
+        lines.append(f"  [{role}] {content}")
+    if config.tools:
+        lines.append(f"{sep}\nTOOLS: {[t.get('name') for t in config.tools]}")
+    _dbg_write("\n".join(lines) + "\n")
+
+
+def _debug_log_result(config: "SubagentConfig", result: "SubagentResult") -> None:
+    """Log the final result after a successful invoke()."""
+    if not _dbg_path():
+        return
+    from datetime import datetime
+    ts = datetime.now().strftime("%H:%M:%S")
+    sep = "─" * 60
+    lines = [
+        sep,
+        f"[{ts}] RESULT  iters={result.iterations}  tokens={result.usage.get('total_tokens','?')}",
+    ]
+    if result.thinking:
+        lines += ["THINKING:", result.thinking[:600] + ("…" if len(result.thinking) > 600 else "")]
+    for tc in result.tool_calls:
+        inp_str = json.dumps(tc.get("input", {}), ensure_ascii=False)[:300]
+        res_str = str(tc.get("result", ""))[:300]
+        lines.append(f"  TOOL → {tc.get('tool')}  {inp_str}")
+        lines.append(f"       ← {res_str}")
+    lines += [
+        "RESPONSE:",
+        result.text[:2000] + ("…" if len(result.text) > 2000 else ""),
+        "",
+    ]
+    _dbg_write("\n".join(lines) + "\n")
+
+
+def _debug_log_error(config: "SubagentConfig", exc: Exception) -> None:
+    """Log an API error."""
+    if not _dbg_path():
+        return
+    from datetime import datetime
+    ts = datetime.now().strftime("%H:%M:%S")
+    _dbg_write(f"\n[{ts}] ERROR  model={config.model}  {type(exc).__name__}: {exc}\n")

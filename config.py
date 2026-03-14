@@ -29,6 +29,7 @@ EXPLORE_MAX_ITER    = 10
 STATISTICS_MAX_ITER = 7
 CODE_MAX_TOOL_USES  = 3
 CODEGEN_MAX_ITER    = 8   # bash/read exploration + generate → run → fix loop
+CODEGEN_THINKING_BUDGET = 2000  # per-iteration thinking for planning before tool calls
 
 # ── Context management ────────────────────────────────────────────────────────
 AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction

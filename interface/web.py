@@ -223,7 +223,7 @@ HTML = """<!DOCTYPE html>
   #lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px;
                   box-shadow: 0 0 40px rgba(0,0,0,.8); }
 
-  /* Generic plot modal — interactive Plotly popup, no buttons */
+  /* Generic plot modal — interactive Plotly popup */
   #plot-modal { display: none; position: fixed; inset: 0; z-index: 940;
                 background: rgba(0,0,0,.92); align-items: center; justify-content: center;
                 padding: 16px; }
@@ -238,6 +238,66 @@ HTML = """<!DOCTYPE html>
                       font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
   #plot-modal-close:hover { color: #e2e8f0; background: #2d3147; }
   #plot-modal-chart { width: 100%; flex: 1; min-height: 0; }
+  /* Feedback bar — shown inside the modal when agent asks a question */
+  #plot-modal-feedback { display: none; flex-shrink: 0; background: #111827;
+                         border-top: 1px solid #2d3147; border-radius: 0 0 8px 8px;
+                         padding: 10px 14px; gap: 8px; flex-direction: column; }
+  #plot-modal-feedback.visible { display: flex; }
+  #plot-modal-question { font-size: 13px; color: #e2e8f0; line-height: 1.4; }
+  #plot-modal-quick-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  #plot-modal-quick-btns button { background: #1f2937; border: 1px solid #374151; color: #d1d5db;
+                                   font-size: 12px; padding: 4px 12px; border-radius: 6px;
+                                   cursor: pointer; }
+  #plot-modal-quick-btns button:hover { background: #374151; color: #f9fafb; }
+  #plot-modal-quick-btns button.primary { background: #4f46e5; border-color: #6366f1; color: #fff; }
+  #plot-modal-input-row { display: flex; gap: 8px; }
+  #plot-modal-input { flex: 1; background: #1f2937; border: 1px solid #374151; color: #e2e8f0;
+                      font-size: 13px; padding: 6px 10px; border-radius: 6px; outline: none; }
+  #plot-modal-input:focus { border-color: #6366f1; }
+  #plot-modal-send { background: #4f46e5; border: none; color: #fff; font-size: 13px;
+                     padding: 6px 16px; border-radius: 6px; cursor: pointer; }
+  #plot-modal-send:hover { background: #6366f1; }
+
+  /* Plot-modal two-column body: chart | divider | labeling panel */
+  #plot-modal-body { display: flex; flex: 1; min-height: 0; gap: 0; overflow: hidden; }
+  #plot-modal-chart { flex: 1; min-width: 200px; min-height: 0; }
+  #pm-divider { width: 5px; flex-shrink: 0; cursor: col-resize; background: #2d3147;
+                transition: background .15s; user-select: none; }
+  #pm-divider:hover, #pm-divider.dragging { background: #6366f1; }
+  #pm-panel { width: 300px; flex-shrink: 0; background: #111827; border-left: 1px solid #2d3147;
+              display: flex; flex-direction: column; overflow-y: auto; padding: 10px 12px; gap: 6px; }
+  .pm-section-lbl { font-size: 11px; font-weight: 700; color: #f59e0b; letter-spacing: .05em;
+                    text-transform: uppercase; margin-top: 4px; }
+  .pm-small { font-size: 11px; color: #6b7280; }
+  #pm-sel-list { font-size: 11px; font-family: monospace; color: #94a3b8; min-height: 20px;
+                 max-height: 90px; overflow-y: auto; white-space: pre; }
+  #pm-sel-count { font-size: 11px; color: #6b7280; font-style: italic; }
+  .pm-hr { border: none; border-top: 1px solid #1f2937; margin: 6px 0; }
+  #pm-patterns-list { display: flex; flex-direction: column; gap: 3px; max-height: 160px; overflow-y: auto; }
+  .pm-pat-row { display: flex; align-items: center; gap: 6px; }
+  .pm-pat-row input[type=checkbox] { accent-color: #22c55e; cursor: pointer; }
+  .pm-pat-row label { font-size: 12px; color: #22c55e; cursor: pointer; }
+  .pm-input { width: 100%; box-sizing: border-box; background: #1f2937; border: 1px solid #374151;
+              color: #e2e8f0; font-size: 12px; padding: 5px 8px; border-radius: 5px;
+              outline: none; font-family: monospace; }
+  .pm-input:focus { border-color: #6366f1; }
+  .pm-textarea { resize: vertical; min-height: 40px; }
+  #pm-cat-btns { display: flex; gap: 6px; }
+  .pm-cat-btn { flex: 1; padding: 5px 0; border: 2px solid transparent; border-radius: 5px;
+                font-size: 12px; font-weight: 600; cursor: pointer; background: #1f2937; color: #9ca3af; }
+  .pm-cat-btn[data-cat=reject].active { background: #7f1d1d; border-color: #ef4444; color: #fca5a5; }
+  .pm-cat-btn[data-cat=accept].active { background: #14532d; border-color: #22c55e; color: #86efac; }
+  .pm-cat-btn:hover { background: #374151; }
+  #pm-action-btns { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .pm-btn-submit { background: #3b82f6; border: none; color: #fff; font-size: 13px; font-weight: 700;
+                   padding: 8px; border-radius: 6px; cursor: pointer; }
+  .pm-btn-submit:hover { background: #2563eb; }
+  .pm-btn-clear  { background: #1f2937; border: 1px solid #374151; color: #9ca3af; font-size: 11px;
+                   padding: 4px 8px; border-radius: 5px; cursor: pointer; }
+  .pm-btn-clear:hover { background: #374151; }
+  .pm-btn-danger { background: #7f1d1d; border: 1px solid #ef4444; color: #fca5a5; font-size: 12px;
+                   font-weight: 700; padding: 6px; border-radius: 5px; cursor: pointer; }
+  .pm-btn-danger:hover { background: #dc2626; color: #fff; }
 
   /* Label modal — interactive signal labelling popup */
   #label-modal { display: none; position: fixed; inset: 0; z-index: 950;
@@ -310,9 +370,53 @@ HTML = """<!DOCTYPE html>
   <div id="plot-modal-card">
     <div id="plot-modal-header">
       <span id="plot-modal-title"></span>
-      <button id="plot-modal-close" onclick="closePlotModal()">✕</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="pm-trial-status" style="font-size:11px;color:#6b7280;font-family:monospace"></span>
+        <button id="plot-modal-close" onclick="closePlotModal()">✕</button>
+      </div>
     </div>
-    <div id="plot-modal-chart"></div>
+    <div id="plot-modal-body">
+      <div id="plot-modal-chart"></div>
+      <div id="pm-divider" title="Drag to resize"></div>
+      <!-- Right labeling panel (mirrors trial_view_gui side panel) -->
+      <div id="pm-panel">
+        <div class="pm-section-lbl">Selected Channels</div>
+        <div id="pm-sel-list"></div>
+        <div id="pm-sel-count">Click a trace to select</div>
+        <button class="pm-btn-clear" onclick="pmClearSelection()">Clear Selection</button>
+        <hr class="pm-hr">
+        <div class="pm-section-lbl">Patterns</div>
+        <div id="pm-patterns-list"></div>
+        <div class="pm-small" style="margin-top:4px">New (;-sep):</div>
+        <input id="pm-new-pat" class="pm-input" type="text" placeholder="spike; artifact">
+        <hr class="pm-hr">
+        <div class="pm-section-lbl">Category</div>
+        <div id="pm-cat-btns">
+          <button class="pm-cat-btn active" data-cat="reject" onclick="pmSetCategory('reject')">Reject</button>
+          <button class="pm-cat-btn" data-cat="accept" onclick="pmSetCategory('accept')">Accept</button>
+        </div>
+        <hr class="pm-hr">
+        <div class="pm-small">Description (optional):</div>
+        <textarea id="pm-desc" class="pm-input pm-textarea"></textarea>
+        <div id="pm-action-btns">
+          <button class="pm-btn-submit" onclick="pmSubmit()">Submit</button>
+          <button class="pm-btn-danger" onclick="pmMarkAllBad()">Mark ALL Bad (X)</button>
+        </div>
+      </div>
+    </div>
+    <!-- Feedback bar for ask_user questions -->
+    <div id="plot-modal-feedback">
+      <div id="plot-modal-question"></div>
+      <div id="plot-modal-quick-btns">
+        <button class="primary" onclick="submitPlotFeedback('yes')">✓ Looks good — start labelling</button>
+        <button onclick="submitPlotFeedback('default')">Use default view</button>
+      </div>
+      <div id="plot-modal-input-row">
+        <input id="plot-modal-input" type="text" placeholder="Or describe a change and press Enter…"
+               onkeydown="if(event.key==='Enter') submitPlotFeedback()">
+        <button id="plot-modal-send" onclick="submitPlotFeedback()">Send</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -571,6 +675,13 @@ function handleEvent(ev) {
       document.getElementById('activity-log').scrollTop = 99999;
     }
 
+  } else if (ev.type === 'labels_saved') {
+    // Server confirmed label save — update local state with authoritative sets
+    pmState.rejectedChannels = new Set(ev.rejected || []);
+    pmState.acceptedChannels = new Set(ev.accepted || []);
+    pmRestyleSelected();
+    pmUpdateSelectionDisplay();
+
   } else if (ev.type === 'show_plot') {
     clearThinkingEntry();
     showPlotModal(ev);
@@ -581,14 +692,24 @@ function handleEvent(ev) {
 
   } else if (ev.type === 'ask_user') {
     clearThinkingEntry();
-    // Show question as assistant bubble in main chat
-    appendMessage('assistant', ev.question);
-    // Let user type an answer — briefly suspend "thinking" lockout
     waitingForAnswer = true;
     thinking = false;
-    document.getElementById('send-btn').disabled = false;
-    document.getElementById('user-input').placeholder = 'Type your answer and press Enter...';
-    setStatus('thinking', 'Waiting for your answer...');
+    const modalOpen = document.getElementById('plot-modal').classList.contains('open');
+    if (modalOpen) {
+      // Modal already open — show feedback bar immediately
+      document.getElementById('plot-modal-question').textContent = ev.question;
+      document.getElementById('plot-modal-feedback').classList.add('visible');
+      document.getElementById('plot-modal-input').focus();
+    } else if (pmPendingQuestion !== null || document.getElementById('plot-modal-chart').data !== undefined) {
+      // show_plot was just sent — buffer the question for when the modal opens
+      pmPendingQuestion = ev.question;
+    } else {
+      // No plot modal involved — show in main chat
+      appendMessage('assistant', ev.question);
+      document.getElementById('send-btn').disabled = false;
+      document.getElementById('user-input').placeholder = 'Type your answer and press Enter...';
+      setStatus('thinking', 'Waiting for your answer...');
+    }
   }
 }
 
@@ -596,26 +717,323 @@ function clearThinkingEntry() {
   if (thinkingEntry) { thinkingEntry.remove(); thinkingEntry = null; }
 }
 
+// ── Plot-modal labeling state ────────────────────────────────────────────────
+let pmState = {
+  trialIdx: null, project: null,
+  chTraceMap: {},        // ch_idx (int) -> trace index in fig.data
+  traceRevMap: {},       // trace_idx (int) -> ch_idx (reverse lookup)
+  traceOrigColors: {},   // trace_idx -> original hex color
+  traceOrigWidths: {},   // trace_idx -> original line.width
+  traceOrigOpacity: {},  // trace_idx -> original opacity
+  selectedChannels: new Set(),
+  rejectedChannels: new Set(),
+  acceptedChannels: new Set(),
+  category: 'reject',
+};
+// Pending ask_user question to show when modal finishes opening
+let pmPendingQuestion = null;
+
 function showPlotModal(ev) {
   document.getElementById('plot-modal-title').textContent = ev.title || 'Plot';
   const fig = JSON.parse(ev.plot_json);
+
+  // Reset state
+  pmState.chTraceMap = {};
+  pmState.traceRevMap = {};
+  pmState.traceOrigColors = {};
+  pmState.traceOrigWidths = {};
+  pmState.traceOrigOpacity = {};
+  pmState.selectedChannels = new Set();
+  pmState.rejectedChannels = new Set();
+  pmState.acceptedChannels = new Set();
+  pmState.category = 'reject';
+  pmState.trialIdx = ev.trial_idx !== undefined ? ev.trial_idx : null;
+  pmState.project = currentProject;
+
+  // Strip layout artifacts that waste space when panel is present
+  if (fig.layout) {
+    fig.layout.showlegend = false;
+    // Remove the large right margin used for standalone channel-label annotations
+    if (fig.layout.margin) fig.layout.margin.r = 8;
+    else fig.layout.margin = {l: 60, r: 8, t: 50, b: 50};
+    // Remove right-side channel label annotations (x≥0.95, xanchor=left, xref=paper)
+    if (fig.layout.annotations) {
+      fig.layout.annotations = fig.layout.annotations.filter(a =>
+        !(a.xref === 'paper' && a.xanchor === 'left' && a.x >= 0.95));
+    }
+    // Box-select as default drag (drag a vertical band to multi-select traces)
+    fig.layout.dragmode = 'select';
+    fig.layout.selectdirection = 'any';
+  }
+
+  // Build ch->trace map from customdata ([ch_idx, region, ch_name, trial_idx])
+  fig.data.forEach((trace, i) => {
+    if (trace.customdata && trace.customdata.length > 0) {
+      const cd = Array.isArray(trace.customdata[0]) ? trace.customdata[0] : trace.customdata;
+      const chCandidate = Array.isArray(cd) ? cd[0] : null;
+      if (chCandidate !== null && typeof chCandidate === 'number') {
+        pmState.chTraceMap[chCandidate] = i;
+        pmState.traceRevMap[i] = chCandidate;
+        pmState.traceOrigColors[i] = (trace.line && trace.line.color) ? trace.line.color : '#888888';
+        pmState.traceOrigWidths[i] = (trace.line && trace.line.width) ? trace.line.width : 0.6;
+        pmState.traceOrigOpacity[i] = trace.opacity !== undefined ? trace.opacity : 1.0;
+      }
+    }
+  });
+
+  pmSetCategory('reject');
+  pmLoadPatterns();
+  pmUpdateSelectionDisplay();
+  document.getElementById('pm-trial-status').textContent = '';
+
   Plotly.newPlot('plot-modal-chart', fig.data, fig.layout, {
     responsive: true,
     displayModeBar: true,
-    modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+    modeBarButtonsToRemove: ['lasso2d'],
     toImageButtonOptions: {format: 'png', filename: (ev.title || 'plot').replace(/\s+/g, '_')},
   });
+  pmBindEvents();
+
   document.getElementById('plot-modal').classList.add('open');
+
+  // Show any buffered ask_user question
+  if (pmPendingQuestion) {
+    const fb = document.getElementById('plot-modal-feedback');
+    document.getElementById('plot-modal-question').textContent = pmPendingQuestion;
+    fb.classList.add('visible');
+    pmPendingQuestion = null;
+  }
 }
 
 function closePlotModal() {
   document.getElementById('plot-modal').classList.remove('open');
+  document.getElementById('plot-modal-feedback').classList.remove('visible');
+  document.getElementById('plot-modal-input').value = '';
+  pmPendingQuestion = null;
   Plotly.purge('plot-modal-chart');
+}
+
+function submitPlotFeedback(fixedValue) {
+  const val = fixedValue !== undefined
+    ? fixedValue
+    : document.getElementById('plot-modal-input').value.trim();
+  if (!val) return;
+  document.getElementById('plot-modal-feedback').classList.remove('visible');
+  document.getElementById('plot-modal-input').value = '';
+  closePlotModal();
+  waitingForAnswer = false;
+  ws.send(JSON.stringify({ type: 'user_answer', content: val }));
+  appendMessage('user', val);
+  thinking = true;
+  document.getElementById('send-btn').disabled = true;
+  document.getElementById('user-input').placeholder = 'Ask anything about the data…';
+  setStatus('thinking', 'Agent is working…');
 }
 
 document.getElementById('plot-modal').addEventListener('click', function(e) {
   if (e.target === this) closePlotModal();
 });
+
+// ── Plot-modal event binding (re-called after every Plotly.react) ────────────
+
+function pmBindEvents() {
+  const d = document.getElementById('plot-modal-chart');
+  if (!d) return;
+  // Plotly uses a custom EventEmitter; removeAllListeners clears previous bindings
+  ['plotly_click','plotly_selected','plotly_deselect'].forEach(ev => {
+    try { d.removeAllListeners(ev); } catch(e) {}
+  });
+  d.on('plotly_click',    pmHandleClick);
+  d.on('plotly_selected', pmHandleSelected);
+  d.on('plotly_deselect', pmHandleDeselect);
+}
+
+function pmHandleSelected(eventData) {
+  // Box-select: all traces whose points were inside the selection box
+  if (!eventData || !eventData.points) return;
+  const curves = new Set(eventData.points.map(p => p.curveNumber));
+  curves.forEach(curveNum => {
+    const ch = pmState.traceRevMap[curveNum];
+    if (ch !== undefined) pmState.selectedChannels.add(ch);
+  });
+  pmRestyleSelected();
+  pmUpdateSelectionDisplay();
+}
+
+function pmHandleDeselect() {
+  pmState.selectedChannels.clear();
+  pmRestyleSelected();
+  pmUpdateSelectionDisplay();
+}
+
+// ── Plot-modal labeling panel functions ──────────────────────────────────────
+
+async function pmLoadPatterns() {
+  if (!pmState.project) return;
+  try {
+    const resp = await fetch(`/api/projects/${pmState.project}/patterns`);
+    const patterns = await resp.json();
+    const list = document.getElementById('pm-patterns-list');
+    list.innerHTML = '';
+    patterns.forEach(pat => {
+      const row = document.createElement('div');
+      row.className = 'pm-pat-row';
+      const label = pat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      row.innerHTML = `<input type="checkbox" data-pat="${pat}" id="pmpat_${pat}">
+                       <label for="pmpat_${pat}">${label}</label>`;
+      list.appendChild(row);
+    });
+  } catch(e) { console.warn('Could not load patterns:', e); }
+}
+
+function pmSetCategory(cat) {
+  pmState.category = cat;
+  document.querySelectorAll('.pm-cat-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.cat === cat);
+  });
+}
+
+function pmHandleClick(data) {
+  if (!data.points || data.points.length === 0) return;
+  const pt = data.points[0];
+
+  // Primary: curveNumber → reverse map to ch_idx
+  let chIdx = pmState.traceRevMap[pt.curveNumber];
+
+  // Fallback: customdata
+  if (chIdx === undefined && pt.customdata) {
+    const cd = pt.customdata;
+    const first = Array.isArray(cd) ? (Array.isArray(cd[0]) ? cd[0][0] : cd[0]) : cd;
+    if (typeof first === 'number') chIdx = first;
+  }
+
+  if (chIdx === undefined || chIdx === null) return;
+
+  if (pmState.selectedChannels.has(chIdx)) {
+    pmState.selectedChannels.delete(chIdx);
+  } else {
+    pmState.selectedChannels.add(chIdx);
+  }
+  pmRestyleSelected();
+  pmUpdateSelectionDisplay();
+}
+
+function pmRestyleSelected() {
+  const chartDiv = document.getElementById('plot-modal-chart');
+  if (!chartDiv.data || !chartDiv.data.length) return;
+
+  // Clone figure data and update only channel traces; use Plotly.react for reliability
+  const newData = chartDiv.data.map((trace, i) => {
+    const ch = pmState.traceRevMap[i];
+    if (ch === undefined) return trace; // legend dummy or non-channel trace
+
+    let color, width, opacity;
+    if (pmState.selectedChannels.has(ch)) {
+      color = '#ffffff'; width = 2.5; opacity = 1.0;
+    } else if (pmState.rejectedChannels.has(ch)) {
+      color = '#ef4444'; width = 1.0; opacity = 1.0;
+    } else if (pmState.acceptedChannels.has(ch)) {
+      color = '#3a3a3a'; width = 0.4; opacity = 0.4;
+    } else {
+      color = pmState.traceOrigColors[i] || '#888888';
+      width = pmState.traceOrigWidths[i] || 0.6;
+      opacity = pmState.traceOrigOpacity[i] !== undefined ? pmState.traceOrigOpacity[i] : 1.0;
+    }
+    return {...trace, line: {...(trace.line || {}), color, width}, opacity};
+  });
+
+  Plotly.react('plot-modal-chart', newData, chartDiv.layout);
+  // Plotly.react can detach event listeners — re-bind immediately
+  pmBindEvents();
+}
+
+function pmUpdateSelectionDisplay() {
+  const list = document.getElementById('pm-sel-list');
+  const count = document.getElementById('pm-sel-count');
+  const n = pmState.selectedChannels.size;
+  if (n === 0) {
+    list.textContent = '';
+    count.textContent = 'Click a trace to select';
+  } else {
+    list.textContent = Array.from(pmState.selectedChannels).sort((a,b)=>a-b)
+      .map(ch => `ch${String(ch).padStart(2,'0')}`).join('  ');
+    count.textContent = `${n} channel${n>1?'s':''} selected`;
+  }
+  // Update trial status (rej/acc/unlabeled)
+  const nRej = pmState.rejectedChannels.size;
+  const nAcc = pmState.acceptedChannels.size;
+  document.getElementById('pm-trial-status').textContent =
+    nRej + nAcc > 0 ? `${nRej} bad / ${nAcc} ok` : '';
+}
+
+function pmClearSelection() {
+  pmState.selectedChannels.clear();
+  pmRestyleSelected();
+  pmUpdateSelectionDisplay();
+}
+
+function pmSubmit() {
+  if (pmState.selectedChannels.size === 0) {
+    alert('Click traces on the chart to select channels first.'); return;
+  }
+  const newPatRaw = document.getElementById('pm-new-pat').value.trim();
+  let patterns = Array.from(document.querySelectorAll('#pm-patterns-list input:checked'))
+    .map(cb => cb.dataset.pat);
+  if (newPatRaw) {
+    newPatRaw.replace(/,/g, ';').split(';').forEach(t => {
+      const p = t.trim().toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+      if (p) patterns.push(p);
+    });
+  }
+  if (patterns.length === 0 && pmState.category !== 'accept') {
+    alert('Select at least one pattern, or switch category to Accept.'); return;
+  }
+  if (patterns.length === 0) patterns = ['physiology'];
+  const desc = document.getElementById('pm-desc').value.trim();
+  const channels = Array.from(pmState.selectedChannels);
+  ws.send(JSON.stringify({
+    type: 'label_channels',
+    trial_idx: pmState.trialIdx,
+    channels, patterns,
+    category: pmState.category,
+    description: desc,
+  }));
+  // Optimistic local update
+  channels.forEach(ch => {
+    if (pmState.category === 'reject') {
+      pmState.rejectedChannels.add(ch); pmState.acceptedChannels.delete(ch);
+    } else {
+      pmState.acceptedChannels.add(ch); pmState.rejectedChannels.delete(ch);
+    }
+  });
+  pmState.selectedChannels.clear();
+  // Add new patterns to panel
+  if (newPatRaw) pmLoadPatterns();
+  document.getElementById('pm-new-pat').value = '';
+  document.getElementById('pm-desc').value = '';
+  document.querySelectorAll('#pm-patterns-list input').forEach(cb => cb.checked = false);
+  pmRestyleSelected();
+  pmUpdateSelectionDisplay();
+}
+
+function pmMarkAllBad() {
+  if (!confirm('Mark ALL channels in this trial as bad?')) return;
+  const channels = Object.keys(pmState.chTraceMap).map(Number);
+  ws.send(JSON.stringify({
+    type: 'label_channels',
+    trial_idx: pmState.trialIdx,
+    channels,
+    patterns: ['trial_wide_artifact'],
+    category: 'reject',
+    description: 'Marked all channels bad for this trial',
+  }));
+  channels.forEach(ch => {
+    pmState.rejectedChannels.add(ch); pmState.acceptedChannels.delete(ch);
+  });
+  pmState.selectedChannels.clear();
+  pmRestyleSelected();
+  pmUpdateSelectionDisplay();
+}
 
 function showLabelModal(ev) {
   document.getElementById('label-modal-progress').textContent = ev.progress || '';
@@ -792,6 +1210,38 @@ document.getElementById('user-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
+// ── Draggable divider between chart and panel ────────────────────────────────
+(function() {
+  const divider = document.getElementById('pm-divider');
+  let dragging = false, startX = 0, startPanelW = 0;
+  divider.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    const panel = document.getElementById('pm-panel');
+    startPanelW = panel.getBoundingClientRect().width;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startX - e.clientX;  // dragging left = wider panel
+    const newW = Math.max(200, Math.min(600, startPanelW + delta));
+    document.getElementById('pm-panel').style.width = newW + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    // Trigger Plotly resize so chart fills the new width
+    Plotly.Plots && Plotly.Plots.resize && Plotly.Plots.resize('plot-modal-chart');
+    window.dispatchEvent(new Event('resize'));
+  });
+})();
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   try {
@@ -808,6 +1258,86 @@ init();
 </body>
 </html>
 """
+
+
+@app.get("/api/projects/{project}/patterns")
+async def get_patterns(project: str):
+    """Return known pattern names for the pattern-checkbox panel."""
+    import config
+    project_dir = Path(config.PROJECTS_DIR) / project
+    pat_path = project_dir / "feedback" / "pattern_names.json"
+    if pat_path.exists():
+        try:
+            data = json.loads(pat_path.read_text())
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+    # Fall back: extract from feedback.json
+    fb_path = project_dir / "feedback" / "feedback.json"
+    if fb_path.exists():
+        try:
+            entries = json.loads(fb_path.read_text())
+            seen, result = set(), []
+            for e in entries:
+                for p in e.get("pattern", []):
+                    if p not in seen:
+                        seen.add(p); result.append(p)
+            return result
+        except Exception:
+            pass
+    return []
+
+
+async def _save_label_channels(msg: dict, project_dir: Path) -> dict:
+    """Save channel labels to feedback/labels.json and return updated rejected/accepted sets."""
+    trial_idx = int(msg.get("trial_idx") or 0)
+    channels   = [int(c) for c in msg.get("channels", [])]
+    patterns   = msg.get("patterns", ["artifact"])
+    category   = msg.get("category", "reject")
+    description = msg.get("description", "")
+
+    labels_path = project_dir / "feedback" / "labels.json"
+    labels_path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing: dict = {}
+    if labels_path.exists():
+        try:
+            existing = json.loads(labels_path.read_text())
+        except Exception:
+            pass
+
+    for ch in channels:
+        sig_id = f"t{trial_idx:03d}_ch{ch:03d}"
+        existing[sig_id] = {
+            "category": category, "patterns": patterns,
+            "description": description, "trial": trial_idx, "channel": ch,
+        }
+
+    labels_path.write_text(json.dumps(existing, indent=2))
+
+    # Save new pattern names to registry
+    if patterns:
+        pat_path = project_dir / "feedback" / "pattern_names.json"
+        known: list = []
+        if pat_path.exists():
+            try:
+                known = json.loads(pat_path.read_text())
+            except Exception:
+                pass
+        changed = False
+        for p in patterns:
+            if p not in known:
+                known.append(p); changed = True
+        if changed:
+            pat_path.write_text(json.dumps(known, indent=2))
+
+    prefix = f"t{trial_idx:03d}_"
+    rejected = [int(v["channel"]) for k, v in existing.items()
+                if k.startswith(prefix) and v.get("category") == "reject"]
+    accepted = [int(v["channel"]) for k, v in existing.items()
+                if k.startswith(prefix) and v.get("category") == "accept"]
+    return {"trial_idx": trial_idx, "rejected": rejected, "accepted": accepted}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -904,6 +1434,9 @@ async def websocket_endpoint(ws: WebSocket):
                         inner = json.loads(raw)
                         if inner.get("type") == "user_answer":
                             await answer_queue.put(inner["content"])
+                        elif inner.get("type") == "label_channels":
+                            result = await _save_label_channels(inner, project_dir)
+                            await ws.send_text(json.dumps({"type": "labels_saved", **result}))
                         # ignore user_message and other types while agent is running
                     except asyncio.TimeoutError:
                         pass
@@ -920,9 +1453,11 @@ async def websocket_endpoint(ws: WebSocket):
                     orch_task.cancel()
                 msg_str = str(exc)
                 if "529" in msg_str or "overloaded" in msg_str.lower():
-                    err = "Anthropic API overloaded. Check status.claude.com and try again."
+                    err = "Anthropic API overloaded — please try again in a moment."
                 elif "rate" in msg_str.lower() or "429" in msg_str:
-                    err = "Rate limited. Wait a moment and try again."
+                    err = "Rate limited — wait a moment and try again."
+                elif "internal server error" in msg_str.lower() or "500" in msg_str or "api_error" in msg_str:
+                    err = "Anthropic API returned a transient 500 error — just retry your message."
                 else:
                     err = f"Error: {type(exc).__name__}: {msg_str[:200]}"
                 await ws.send_text(json.dumps({"type": "error", "message": err}))
