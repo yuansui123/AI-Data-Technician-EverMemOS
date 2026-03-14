@@ -28,6 +28,7 @@ ORCHESTRATOR_LIMITS = {"simple": 5, "moderate": 10, "complex": 25}
 EXPLORE_MAX_ITER    = 10
 STATISTICS_MAX_ITER = 7
 CODE_MAX_TOOL_USES  = 3
+CODEGEN_MAX_ITER    = 4   # generate → run → fix iterations for plot script generation
 
 # ── Context management ────────────────────────────────────────────────────────
 AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction

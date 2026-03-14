@@ -76,34 +76,30 @@ async def teach_session(
 
         if view_desc.lower() not in ("default", "skip", ""):
             import numpy as np
+            from subagents.reasoners.codegen import codegen
             rng_preview = np.random.default_rng()
             preview_mat = mat_files[rng_preview.integers(len(mat_files))]
             dims = await _get_dims(preview_mat, bash, project_dir)
+            tr_p = int(rng_preview.integers(dims[2])) if dims else 0
+            ch_p = int(rng_preview.integers(dims[1])) if dims else 0
 
-            # Emit progress to activity log
-            _ref_name = (Path(ref_file_path).name if ref_file_path else _extract_ref_filename(view_desc))
-            await on_event({"type": "sub_tool_call", "subagent": "teach_session",
-                            "tool": "generate_plot_script",
-                            "input": {"view": view_desc[:120], "ref_file": _ref_name}})
-            plot_script = await _generate_plot_script(
-                view_desc, project_dir, preview_mat, dims, bash, project_dir,
+            # CodeGen: generate → run → fix loop (shows progress in activity log via on_event)
+            plot_script = await codegen(
+                description=view_desc,
+                mat_path=preview_mat,
+                ch_idx=ch_p,
+                tr_idx=tr_p,
+                project_dir=project_dir,
+                dims=dims,
                 ref_file_path=ref_file_path,
+                on_event=on_event,
             )
             if plot_script:
-                lines = plot_script.count("\n") + 1
-                await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                "tool": "generate_plot_script",
-                                "result": f"Generated {lines}-line plot script"})
-                # Preview
-                tr_p = int(rng_preview.integers(dims[2])) if dims else 0
-                ch_p = int(rng_preview.integers(dims[1])) if dims else 0
-                await on_event({"type": "sub_tool_call", "subagent": "teach_session",
-                                "tool": "run_plot_script",
-                                "input": {"mat": preview_mat.name, "ch": ch_p, "tr": tr_p}})
-                preview_json, preview_err = await _run_plot_script(plot_script, preview_mat, ch_p, tr_p, bash, project_dir)
+                # CodeGen already verified the script runs — read the JSON it produced
+                preview_json, preview_err = await _run_plot_script(
+                    plot_script, preview_mat, ch_p, tr_p, bash, project_dir
+                )
                 if preview_json:
-                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                    "tool": "run_plot_script", "result": "Plot rendered OK"})
                     await on_event({"type": "show_plot", "plot_json": preview_json,
                                     "title": f"Preview — {preview_mat.stem} tr{tr_p}"})
                     await on_event({"type": "ask_user",
@@ -113,46 +109,37 @@ async def teach_session(
                         if confirm == "default":
                             plot_script = None
                         elif confirm != "yes":
-                            # Try to refine based on feedback
-                            await on_event({"type": "sub_tool_call", "subagent": "teach_session",
-                                            "tool": "generate_plot_script",
-                                            "input": {"view": confirm[:120], "refining": True}})
-                            plot_script = await _generate_plot_script(
-                                confirm, project_dir, preview_mat, dims, bash, project_dir,
-                                prior_script=plot_script,
+                            # Refine: new CodeGen pass with prior script and user feedback
+                            plot_script = await codegen(
+                                description=confirm,
+                                mat_path=preview_mat,
+                                ch_idx=ch_p,
+                                tr_idx=tr_p,
+                                project_dir=project_dir,
+                                dims=dims,
                                 ref_file_path=ref_file_path,
+                                prior_script=plot_script,
+                                on_event=on_event,
                             )
                             if plot_script:
-                                await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                                "tool": "generate_plot_script",
-                                                "result": f"Refined script ({plot_script.count(chr(10))+1} lines)"})
-                                await on_event({"type": "sub_tool_call", "subagent": "teach_session",
-                                                "tool": "run_plot_script",
-                                                "input": {"mat": preview_mat.name, "ch": ch_p, "tr": tr_p}})
-                                refined_json, refined_err = await _run_plot_script(plot_script, preview_mat, ch_p, tr_p, bash, project_dir)
+                                refined_json, _ = await _run_plot_script(
+                                    plot_script, preview_mat, ch_p, tr_p, bash, project_dir
+                                )
                                 if refined_json:
-                                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                                    "tool": "run_plot_script", "result": "Refined plot OK"})
                                     await on_event({"type": "show_plot", "plot_json": refined_json,
                                                     "title": f"Refined preview — {preview_mat.stem}"})
                                 else:
-                                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                                    "tool": "run_plot_script", "result": f"FAILED: {refined_err}"})
                                     await on_event({"type": "ask_user",
-                                                    "question": f"⚠️ Refined script failed ({refined_err}). Keeping previous layout."})
+                                                    "question": "⚠️ Refined script failed. Keeping previous layout."})
                     except asyncio.TimeoutError:
                         pass  # keep current plot_script
                 else:
-                    await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                    "tool": "run_plot_script", "result": f"FAILED: {preview_err}"})
                     await on_event({"type": "ask_user",
-                                    "question": f"⚠️ Plot script failed to run — falling back to default single-channel view.\n\n`{preview_err}`"})
+                                    "question": f"⚠️ Plot render failed after generation — falling back to default.\n\n`{preview_err}`"})
                     plot_script = None
             else:
-                await on_event({"type": "sub_tool_result", "subagent": "teach_session",
-                                "tool": "generate_plot_script", "result": "FAILED: LLM returned empty code"})
                 await on_event({"type": "ask_user",
-                                "question": "⚠️ Could not generate plot script — falling back to default single-channel view."})
+                                "question": "⚠️ CodeGen could not produce a working plot script — falling back to default single-channel view."})
 
     # Load existing labels
     existing: dict = {}
