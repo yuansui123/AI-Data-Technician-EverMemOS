@@ -19,6 +19,7 @@ async def teach_session(
     on_event=None,
     answer_queue=None,
     plot_script: str | None = None,
+    view_description: str | None = None,
 ) -> dict:
     """Show signals one-by-one via modal popup, collect user labels.
 
@@ -51,22 +52,26 @@ async def teach_session(
 
     # ── View selection (only if no plot_script was pre-supplied) ─────────────
     if plot_script is None:
-        await on_event({
-            "type": "ask_user",
-            "question": (
-                "**How would you like each signal displayed?**\n\n"
-                "Describe freely — for example:\n"
-                "- `default` — single channel time-series (fastest)\n"
-                "- `all channels stacked vertically for this trial`\n"
-                "- `MTL channels only, offset-stacked`\n"
-                "- `similar to my script at C:\\path\\to\\plot_script.py`\n"
-                "- `similar to the GUI in the user folder`"
-            ),
-        })
-        try:
-            view_desc = (await asyncio.wait_for(answer_queue.get(), timeout=180)).strip()
-        except asyncio.TimeoutError:
-            view_desc = "default"
+        if view_description:
+            # Orchestrator already collected the user's view preference — use it directly
+            view_desc = view_description
+        else:
+            await on_event({
+                "type": "ask_user",
+                "question": (
+                    "**How would you like each signal displayed?**\n\n"
+                    "Describe freely — for example:\n"
+                    "- `default` — single channel time-series (fastest)\n"
+                    "- `all channels stacked vertically for this trial`\n"
+                    "- `MTL channels only, offset-stacked`\n"
+                    "- `similar to my script at C:\\path\\to\\plot_script.py`\n"
+                    "- `similar to the GUI in the user folder`"
+                ),
+            })
+            try:
+                view_desc = (await asyncio.wait_for(answer_queue.get(), timeout=180)).strip()
+            except asyncio.TimeoutError:
+                view_desc = "default"
 
         if view_desc.lower() not in ("default", "skip", ""):
             import numpy as np

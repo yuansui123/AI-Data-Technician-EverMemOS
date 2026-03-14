@@ -61,7 +61,9 @@ ORCHESTRATOR_TOOLS = [
         "name": "teach_session",
         "description": (
             "Interactive labelling session — shows signals one-by-one as popup modals "
-            "with label buttons (clean/artifact/noise/skip). Requires data_dir."
+            "with label buttons. Requires data_dir. "
+            "ALWAYS use this when user wants to label, teach, or annotate signals. "
+            "NEVER launch external GUI scripts — pass any style reference as view_description instead."
         ),
         "input_schema": {
             "type": "object",
@@ -69,6 +71,24 @@ ORCHESTRATOR_TOOLS = [
                 "data_dir": {"type": "string", "description": "Path to data directory or specific .mat file"},
                 "pattern": {"type": "string", "description": "Optional: pattern name to label for (e.g. 'artifact')"},
                 "n_signals": {"type": "integer", "description": "How many signals to label in this session (default 10)"},
+                "view_description": {
+                    "type": "string",
+                    "description": (
+                        "Optional: how the user wants signals displayed. Pass any view preference the user "
+                        "mentioned, e.g. 'all channels stacked', 'similar to C:\\path\\to\\file.py', "
+                        "'MTL channels only'. The workflow will generate a matching Plotly layout. "
+                        "If omitted the workflow will ask the user."
+                    ),
+                },
+                "plot_script": {
+                    "type": "string",
+                    "description": (
+                        "Optional pre-built Python code for rendering each signal. "
+                        "Variables `mat_path`, `ch_idx`, `tr_idx` are pre-defined. "
+                        "Must end with `print(json.dumps(fig))`. "
+                        "Leave unset — let view_description generate this automatically."
+                    ),
+                },
             },
             "required": ["data_dir"],
         },
@@ -154,6 +174,28 @@ ORCHESTRATOR_TOOLS = [
                 "cwd": {"type": "string", "description": "Optional working directory"},
             },
             "required": ["command"],
+        },
+    },
+    {
+        "name": "show_plot",
+        "description": (
+            "Generate an interactive Plotly chart and display it as a popup in the browser. "
+            "Write Python code that builds a Plotly figure dict with 'data' and 'layout' keys "
+            "and ends with `print(json.dumps(fig))`. "
+            "Dark theme: paper_bgcolor='#0d1117', plot_bgcolor='#161b22', font color white. "
+            "The chart appears immediately as an interactive popup with zoom, pan, and hover. "
+            "Use this instead of matplotlib for ALL visualizations."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "python_code": {
+                    "type": "string",
+                    "description": "Python code ending with `print(json.dumps(fig))` where fig is a Plotly figure dict.",
+                },
+                "title": {"type": "string", "description": "Title shown in the popup header."},
+            },
+            "required": ["python_code", "title"],
         },
     },
     {
@@ -265,6 +307,8 @@ class OrchestratorToolExecutor:
                 n_signals=inp.get("n_signals", 10),
                 on_event=self.on_event,
                 answer_queue=self.answer_queue,
+                plot_script=inp.get("plot_script"),
+                view_description=inp.get("view_description"),
             )
 
         if tool_name == "review_results":
@@ -302,6 +346,31 @@ class OrchestratorToolExecutor:
             if result.stderr:
                 out += f"\n[stderr] {result.stderr}"
             return {"stdout": out or "(no output)"}
+
+        if tool_name == "show_plot":
+            from subagents.primitives.bash import bash
+            import json as _json
+            code = inp["python_code"]
+            title = inp.get("title", "Plot")
+            cmd = (
+                f"$code = @'\n{code}\n'@\n"
+                "$code | Out-File -Encoding utf8 C:\\Windows\\Temp\\show_plot.py\n"
+                "python C:\\Windows\\Temp\\show_plot.py"
+            )
+            result = await bash(cmd, cwd=str(p))
+            if not result.ok or not result.stdout.strip():
+                return {"response": f"Plot failed: {result.stderr or '(no output)'}"}
+            try:
+                _json.loads(result.stdout.strip())
+            except Exception as e:
+                return {"response": f"Plot code did not produce valid JSON: {e}\n{result.stdout[:300]}"}
+            if self.on_event:
+                await self.on_event({
+                    "type": "show_plot",
+                    "plot_json": result.stdout.strip(),
+                    "title": title,
+                })
+            return {"response": f"Plot '{title}' displayed in the browser."}
 
         if tool_name == "ask_user":
             import asyncio
