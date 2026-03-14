@@ -305,20 +305,41 @@ async def _run_plot_script(script: str, mat_path: Path, ch_idx: int, tr_idx: int
     ])
     py = header + "\n" + script
     encoded = base64.b64encode(py.encode("utf-8")).decode("ascii")
-    cmd = (
+    # Write script via base64 decode (avoids all PowerShell quoting issues)
+    write_cmd = (
         f"python -c \"import base64,pathlib; pathlib.Path('C:/Windows/Temp/custom_plot.py')"
-        f".write_bytes(base64.b64decode('{encoded}'))\"\n"
-        "python C:/Windows/Temp/custom_plot.py"
+        f".write_bytes(base64.b64decode('{encoded}'))\""
     )
-    result = await bash_fn(cmd, cwd=str(cwd))
-    if result.ok and result.stdout.strip():
+    # Run script, capturing stderr separately so we can show it on failure
+    run_cmd = (
+        "python C:/Windows/Temp/custom_plot.py 2>C:/Windows/Temp/custom_plot_err.txt; "
+        "$ec=$LASTEXITCODE; "
+        "$err=if(Test-Path C:/Windows/Temp/custom_plot_err.txt)"
+        "{Get-Content C:/Windows/Temp/custom_plot_err.txt -Raw}else{''}; "
+        "if($ec -ne 0 -or $err){Write-Host \"STDERR:$err\" -NoNewline}"
+    )
+    result = await bash_fn(f"{write_cmd}\n{run_cmd}", cwd=str(cwd))
+    stdout = result.stdout or ""
+    # Separate plot JSON from any STDERR marker we injected
+    plot_out = ""
+    stderr_out = ""
+    if "STDERR:" in stdout:
+        parts = stdout.split("STDERR:", 1)
+        plot_out = parts[0].strip()
+        stderr_out = parts[1].strip()
+    else:
+        plot_out = stdout.strip()
+
+    if plot_out:
         try:
-            json.loads(result.stdout.strip())
-            return result.stdout.strip(), None
+            json.loads(plot_out)
+            return plot_out, None
         except Exception as e:
-            return None, f"Script output was not valid JSON: {e}\nstdout: {result.stdout[:300]}"
-    err = getattr(result, "stderr", "") or ""
-    return None, f"Script failed:\n{err[:400]}" if err else "Script produced no output."
+            return None, f"Script output not valid JSON: {e}\nstdout: {plot_out[:300]}\nstderr: {stderr_out[:300]}"
+
+    if stderr_out:
+        return None, f"Script error:\n{stderr_out[:600]}"
+    return None, "Script ran but produced no output (missing print(json.dumps(fig))?)."
 
 
 async def _plot_signal(mat_path: Path, ch_idx: int, tr_idx: int,
