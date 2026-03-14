@@ -30,8 +30,8 @@ async def teach_session(
 
     Returns {labels_added, total_labels, labels_path, summary_updated}.
     """
-    from subagents.primitives.bash import bash
-    from subagents.reasoners.think import think
+    from tools.bash import bash
+    from agents.think import think
 
     project_dir = Path(project_dir)
     labels_path = project_dir / "feedback" / "labels.json"
@@ -80,7 +80,7 @@ async def teach_session(
 
         if view_desc.lower() not in ("default", "skip", ""):
             import numpy as np
-            from subagents.reasoners.codegen import codegen
+            from agents.codegen import codegen
             rng_preview = np.random.default_rng()
             preview_mat = mat_files[rng_preview.integers(len(mat_files))]
             dims = await _get_dims(preview_mat, bash, project_dir)
@@ -402,7 +402,7 @@ async def _generate_plot_script(
 ) -> str | None:
     """Ask an LLM to write a Plotly plot_script from the user's description."""
     import re
-    from subagents.base import SubagentConfig, invoke
+    from agents.runner import SubagentConfig, invoke
     import config as cfg
 
     # Project summary for dataset context

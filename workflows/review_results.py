@@ -20,9 +20,9 @@ async def review_results(
 
     Returns {metrics_by_pattern, fp_examples, fn_examples, review_text}.
     """
-    from subagents.reasoners.statistics import statistics
-    from subagents.primitives.vision import vision
-    from subagents.reasoners.think import think
+    from agents.statistics import statistics
+    from tools.vision import vision
+    from agents.think import think
 
     project_dir = Path(project_dir)
     carry = dict(context_carry or {})

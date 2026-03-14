@@ -1,4 +1,4 @@
-"""Explore reasoner — agentic tool-use loop [Bash, Vision], max 10 iterations.
+"""Explore agent — agentic tool-use loop [Bash, Vision], max 10 iterations.
 
 Model: claude-sonnet-4-6
 Tools: bash_execute, vision_analyze
@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def _load_prompt() -> str:
-    p = Path(__file__).parent.parent / "prompts" / "explore.md"
+    p = Path(__file__).parent / "prompts" / "explore.md"
     return p.read_text(encoding="utf-8")
 
 
@@ -24,7 +24,7 @@ async def explore(
     on_event=None,
 ) -> dict:
     """Run the Explore agent on *data_dir* and return the exploration report dict."""
-    from subagents.base import SubagentConfig, ToolExecutor, invoke
+    from agents.runner import SubagentConfig, ToolExecutor, invoke
     from tools import EXPLORE_TOOLS
     import config
 
@@ -42,14 +42,13 @@ async def explore(
         model=config.EXPLORE_MODEL,
         system_prompt=_load_prompt(),
         tools=EXPLORE_TOOLS,
-        thinking_budget=0,  # regular inference for tool-use loop
+        thinking_budget=0,
         max_iterations=config.EXPLORE_MAX_ITER,
         max_tokens=4096,
     )
 
     executor = ToolExecutor(project_dir=str(project_dir) if project_dir else None)
 
-    # Wrap on_event so explore's tool calls appear as sub_tool_call/sub_tool_result
     sub_on_event = None
     if on_event:
         async def sub_on_event(event: dict):
@@ -59,12 +58,10 @@ async def explore(
             elif event["type"] == "tool_result":
                 await on_event({"type": "sub_tool_result", "subagent": "explore",
                                 "tool": event["tool"], "result": event["result"]})
-            # skip text_delta from subagents — not user-facing
 
     result = await invoke(cfg, [{"role": "user", "content": user_message}],
                           tool_executor=executor, on_event=sub_on_event)
 
-    # parse JSON from final response
     text = result.text.strip()
     if text.startswith("```"):
         text = text.split("```")[1]

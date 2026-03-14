@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _setup_debug_log(args) -> None:
-    """If --debug, set AI_DT_DEBUG_LOG env var so subagents/base.py can find the path."""
+    """If --debug, set AI_DT_DEBUG_LOG env var so agents/runner.py can find the path."""
     if not args.debug:
         return
     import os

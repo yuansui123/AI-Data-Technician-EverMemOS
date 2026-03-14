@@ -21,8 +21,8 @@ async def ingest_documents(
 
     Returns {extracted_texts, summary_stored, explore_report (if data_dir given)}.
     """
-    from subagents.primitives.bash import bash
-    from subagents.reasoners.think import think
+    from tools.bash import bash
+    from agents.think import think
 
     extracted: dict[str, str] = {}
 
@@ -66,7 +66,7 @@ async def ingest_documents(
 
 
 async def _extract_text(fp: Path, project_dir: str | Path) -> str:
-    from subagents.primitives.bash import bash
+    from tools.bash import bash
 
     if fp.suffix.lower() == ".pdf":
         # Use temp-file pattern to avoid shell-quoting issues with Windows paths.

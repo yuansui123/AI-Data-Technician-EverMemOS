@@ -20,8 +20,8 @@ async def explore_dataset(
 
     Returns the exploration report dict.
     """
-    from subagents.reasoners.explore import explore
-    from subagents.reasoners.think import think
+    from agents.explore import explore
+    from agents.think import think
 
     # Step 1 — Explore
     report = await explore(

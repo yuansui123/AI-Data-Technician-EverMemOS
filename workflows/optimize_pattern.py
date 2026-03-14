@@ -27,11 +27,11 @@ async def optimize_pattern(
 
     Returns {best_rule, fitness, metrics, rounds_run, feature_gaps_found}.
     """
-    from subagents.reasoners.statistics import statistics
-    from subagents.reasoners.think import think
-    from subagents.primitives.vision import vision
-    from subagents.primitives.code import code
-    from subagents.primitives.bash import bash
+    from agents.statistics import statistics
+    from agents.think import think
+    from tools.vision import vision
+    from agents.code import code
+    from tools.bash import bash
     import config
 
     project_dir = Path(project_dir)
@@ -136,7 +136,7 @@ async def _vision_gap(
     project_dir: Path,
 ) -> str:
     """Run Vision on FN signal plots and aggregate suggested feature gaps."""
-    from subagents.primitives.vision import vision
+    from tools.vision import vision
 
     plot_dir = project_dir / "tmp" / "plots"
     gaps: list[str] = []
@@ -170,7 +170,7 @@ async def _synthesize_feature(
     v4cedars_lib: str,
 ) -> None:
     """Use the Code primitive to draft a new feature and move it to v4cedars lib."""
-    from subagents.primitives.code import code
+    from agents.code import code
 
     output_dir = Path(v4cedars_lib) / "features" / "derived"
     await code(

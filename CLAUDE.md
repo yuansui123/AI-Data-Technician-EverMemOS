@@ -1,7 +1,7 @@
 # AI Data Technician
 
 ## What this project is
-A local-first AI agent system for analyzing raw time series data (EEG/neural signals). Synthesizes two prior approaches into a three-tier subagent architecture modeled on Claude Code's context management.
+A local-first AI agent system for analyzing raw time series data (EEG/neural signals). Architecture modeled on Claude Code: tools + agents + workflows.
 
 **Read the full architecture plan before doing anything**: `.claude/PLAN.md`
 
@@ -11,28 +11,36 @@ A local-first AI agent system for analyzing raw time series data (EEG/neural sig
 ```
 C:\Users\yuans\Desktop\ClaudeCode\v4cedars\lib\
     feature_store.py, label_store.py, rules.py, workflow.py
-    optimization\*, features\*, plot\*, gui\*
+    features\*, plot\*, gui\*
 ```
 All imports from v4cedars use this path. Never duplicate these files here.
 
+LASR optimization code (evaluation, evolution, pareto, population, sampling) has been copied locally to `tools/lasr/` with imports updated.
+
 ---
 
-## Three-tier subagent architecture
+## Architecture: tools / agents / workflows
 
-**Tier 1 — Primitives** (atomic, no reasoning loop):
-- `Bash` — subprocess execution, no LLM
-- `Vision` — Gemini 2.0 Flash, single image → text
-- `Code` — claude-sonnet-4-6, writes files only, never executes
+**Tools** (`tools/`) — deterministic, no LLM:
+- `bash.py` — subprocess execution via PowerShell
+- `vision.py` — Gemini 2.0 Flash, image → structured JSON
+- `read_file.py` — file reader with paging
+- `ask_user.py` — human-in-the-loop input
+- `lasr/` — LASR optimization (evaluation, evolution, pareto, population, sampling)
 
-**Tier 2 — Reasoners** (bounded reasoning loops):
-- `Plan` — claude-opus-4-6 + extended thinking 8k, single-pass, no tools
-- `Think` — claude-sonnet-4-6 + extended thinking 5k, single-pass, no tools
-- `Explore` — claude-sonnet-4-6, tool-use loop [Bash, Vision], max 10 iter
-- `Statistics` — claude-sonnet-4-6, tool-use loop [Bash, Vision], max 15 iter
+**Agents** (`agents/`) — all LLM invocations via `invoke()`:
+- `runner.py` — core LLM loop engine (`invoke()`, `run_agent()`, `SubagentConfig`, `ToolExecutor`)
+- `think.py` — single-pass Claude + extended thinking (summaries, compaction, LASR prompts)
+- `explore.py` — tool-use loop [Bash, Vision], max 10 iter
+- `statistics.py` — tool-use loop [Bash, Vision], max 15 iter
+- `codegen.py` — generate→run→fix loop for Plotly scripts
+- `code.py` — single-pass code writer (feature/plot functions)
 
-**Tier 3 — Workflows** (predefined Python async sequences in `workflows/`):
+**Workflows** (`workflows/`) — Python async sequences composing tools + agents:
 - `explore_dataset`, `ingest_documents`, `optimize_pattern`
 - `teach_session`, `review_results`, `apply_rules`
+
+**Orchestrator** (`orchestrator/loop.py`) — the outer LLM agent loop with all tool schemas.
 
 ---
 
@@ -42,7 +50,7 @@ All imports from v4cedars use this path. Never duplicate these files here.
 - `sessions/session_{id}.json` — conversation turns, one per session
 - Auto-compact via Think when context > 40k tokens
 - In-context scratchpad (TodoWrite equivalent) maintained by orchestrator
-- `context_carry` dict passes facts between subagent steps
+- `context_carry` dict passes facts between agent steps
 
 ---
 
@@ -53,9 +61,9 @@ All imports from v4cedars use this path. Never duplicate these files here.
 
 ---
 
-## Hallucination prevention (vs v16CodeAct's 500-step loop)
-- Each subagent gets a **fresh bounded context** assembled by orchestrator
-- Hard iteration limits at every level (Orchestrator: 8/20/50 by complexity, Explore: 10, Statistics: 15)
+## Hallucination prevention
+- Each agent gets a **fresh bounded context** assembled by orchestrator
+- Hard iteration limits at every level (Orchestrator: 8/20/50, Explore: 10, Statistics: 15, CodeGen: 8)
 - Extended thinking replaces long reasoning chains within a single call
 - Think agent post-processes results into compact summaries before entering orchestrator context
 - Termination enforced at infrastructure level, not by LLM self-termination
@@ -63,10 +71,10 @@ All imports from v4cedars use this path. Never duplicate these files here.
 ---
 
 ## Coding conventions
-- All subagent calls go through `subagents/base.py:invoke()`
-- Primitives never call other subagents
-- Reasoners use [Bash, Vision] as tools — never Code or other reasoners
+- All LLM calls go through `agents/runner.py:invoke()`
+- Tools never call agents or other tools
+- Agents use [Bash, Vision] as tools — never other agents
 - Workflows are plain Python async functions — no LLM at the workflow level
-- Write tool definitions in `tools/` as Anthropic JSON schema dicts
-- System prompts live in `subagents/prompts/*.md` — derive from v4cedars CLAUDE.md and SKILL.md files
+- Tool definitions live in `tools/` as Anthropic JSON schema dicts
+- System prompts live in `agents/prompts/*.md`
 - `config.py` is the single source of truth for model IDs, token budgets, and paths

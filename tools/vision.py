@@ -1,9 +1,8 @@
-"""Vision primitive — Gemini 2.0 Flash, single image → structured text.
+"""Vision tool — Gemini Flash, single image -> structured text.
 
-Input:  image path (converted to base64) + optional context dict
-Output: {description, likely_pattern, rule_assessment, suggested_feature_gap}
-
-Limit: 1 Gemini call, no tools.
+Deterministic interface: image bytes + optional context -> structured JSON dict.
+Uses Google Gemini under the hood but from the system's perspective this is
+an opaque tool: image in, text out.
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ async def vision(
     image_path: str | Path,
     context: dict | None = None,
 ) -> dict:
-    """Send an image to Gemini 2.0 Flash and return a structured analysis dict."""
+    """Send an image to Gemini Flash and return a structured analysis dict."""
     from google import genai
     from google.genai import types as genai_types
     import config
@@ -37,10 +36,10 @@ async def vision(
     prompt = (
         "You are analyzing a neural signal plot to help identify patterns.\n"
         "Return a JSON object with exactly these keys:\n"
-        "  description        — one-sentence description of what you see\n"
-        "  likely_pattern     — most likely signal pattern name (or 'unknown')\n"
-        "  rule_assessment    — if a rule is in context, does it correctly classify this signal?\n"
-        "  suggested_feature_gap — which feature might better discriminate this signal (or 'none')\n"
+        "  description        -- one-sentence description of what you see\n"
+        "  likely_pattern     -- most likely signal pattern name (or 'unknown')\n"
+        "  rule_assessment    -- if a rule is in context, does it correctly classify this signal?\n"
+        "  suggested_feature_gap -- which feature might better discriminate this signal (or 'none')\n"
         + ctx_text
         + "\n\nReturn ONLY the JSON object, no markdown fences."
     )
@@ -54,7 +53,6 @@ async def vision(
     )
 
     raw = response.text.strip()
-    # strip optional markdown fences
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -63,3 +61,28 @@ async def vision(
         return json.loads(raw)
     except json.JSONDecodeError:
         return {"raw_response": raw, "parse_error": "Could not decode JSON"}
+
+
+# -- Anthropic tool schema --------------------------------------------------
+
+SCHEMA: dict = {
+    "name": "vision_analyze",
+    "description": (
+        "Send an image to Gemini Flash for analysis. "
+        "Returns description, likely_pattern, rule_assessment, suggested_feature_gap."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "image_path": {"type": "string", "description": "Absolute path to the PNG/JPG."},
+            "context": {
+                "type": "object",
+                "description": (
+                    "Optional context dict: signal_id, known_patterns, current_rule, "
+                    "TP, FP, FN, TN counts."
+                ),
+            },
+        },
+        "required": ["image_path"],
+    },
+}

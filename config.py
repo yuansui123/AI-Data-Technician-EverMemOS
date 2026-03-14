@@ -9,7 +9,6 @@ _HERE = Path(__file__).resolve().parent
 
 # ── Model IDs ──────────────────────────────────────────────────────────────────
 ORCHESTRATOR_MODEL = "claude-sonnet-4-6"
-PLAN_MODEL         = "claude-sonnet-4-6"
 THINK_MODEL        = "claude-sonnet-4-6"
 EXPLORE_MODEL      = "claude-sonnet-4-6"
 STATISTICS_MODEL   = "claude-sonnet-4-6"
@@ -18,7 +17,6 @@ VISION_MODEL       = "gemini-2.5-flash"
 
 # ── Token budgets (extended thinking) ─────────────────────────────────────────
 ORCHESTRATOR_THINKING_BUDGET =  0      # disabled for now
-PLAN_THINKING_BUDGET         =  0      # disabled for now
 THINK_THINKING_BUDGET        =  0      # disabled for now
 EXPLORE_THINKING_BUDGET      =  0      # disabled for now
 STATISTICS_THINKING_BUDGET   =  0      # disabled for now
@@ -35,8 +33,15 @@ CODEGEN_THINKING_BUDGET = 2000  # per-iteration thinking for planning before too
 AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction
 
 # ── Memory backend ────────────────────────────────────────────────────────────
-MEMORY_BACKEND = "file"           # "file" | "evermemos"
-EVERMEMOS_BASE_URL = "http://localhost:1995/api/v1"
+MEMORY_BACKEND = "file"           # "file" | "evermemos_local" | "evermemos_cloud"
+
+# EverMemOS endpoints — resolved automatically from MEMORY_BACKEND
+_EVERMEMOS_URLS = {
+    "evermemos_local": "http://localhost:1995/api/v1",
+    "evermemos_cloud": "https://api.evermind.ai/api/v0",
+}
+EVERMEMOS_BASE_URL = _EVERMEMOS_URLS.get(MEMORY_BACKEND, _EVERMEMOS_URLS["evermemos_local"])
+EVERMEMOS_API_KEY  = os.getenv("EVERMEM_API_KEY", "")  # only needed for cloud
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 V4CEDARS_LIB = r"C:\Users\yuans\Desktop\ClaudeCode\v4cedars\lib"

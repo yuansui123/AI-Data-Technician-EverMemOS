@@ -1,7 +1,6 @@
-"""Bash primitive — pure subprocess, no LLM.
+"""Bash tool — pure subprocess execution, no LLM.
 
-The caller decides the command; Bash executes and returns stdout, stderr,
-returncode, and any new file paths created under the project tmp dir.
+The caller decides the command; this executes and returns stdout, stderr, returncode.
 """
 from __future__ import annotations
 
@@ -42,7 +41,6 @@ async def bash(
     """Execute *cmd* in a subprocess and return a BashResult."""
     import config
 
-    # Inject v4cedars lib onto PYTHONPATH so callers can import it directly
     merged_env = os.environ.copy()
     merged_env["PYTHONPATH"] = (
         str(config.V4CEDARS_LIB)
@@ -55,8 +53,6 @@ async def bash(
     try:
         import sys as _sys
         if _sys.platform == "win32":
-            # PowerShell handles multi-line strings and Python -c correctly.
-            # cmd.exe splits on newlines, breaking multi-line python -c commands.
             proc = await asyncio.create_subprocess_exec(
                 "powershell", "-NoProfile", "-NonInteractive", "-Command", cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -83,3 +79,26 @@ async def bash(
         stderr=stderr_b.decode(errors="replace").rstrip(),
         returncode=proc.returncode or 0,
     )
+
+
+# -- Anthropic tool schema --------------------------------------------------
+
+SCHEMA: dict = {
+    "name": "bash_execute",
+    "description": (
+        "Execute a shell command via Windows PowerShell. "
+        "Use this to run Python scripts, list files, compute statistics, extract PDF text. "
+        "Multi-line python -c is supported. Use single quotes inside python -c strings: "
+        "python -c \"import sys; print('ok')\". "
+        "Use Get-ChildItem or dir for listing. Select-Object -First N replaces head."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "Shell command to execute."},
+            "cwd": {"type": "string", "description": "Working directory. Defaults to project root."},
+            "timeout": {"type": "integer", "description": "Timeout in seconds. Defaults to 60."},
+        },
+        "required": ["command"],
+    },
+}

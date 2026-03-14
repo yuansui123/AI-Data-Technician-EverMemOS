@@ -1,8 +1,8 @@
-"""CodeGen reasoner — generate → run → fix loop for Plotly plot scripts.
+"""CodeGen agent — generate -> run -> fix loop for Plotly plot scripts.
 
 Model:     claude-sonnet-4-6
-Tool:      write_and_run  (writes code via base64, runs it, returns stdout+stderr)
-Max iter:  config.CODEGEN_MAX_ITER  (default 4)
+Tools:     bash_execute, read_file, write_and_run
+Max iter:  config.CODEGEN_MAX_ITER (default 8)
 Output:    working Python script body (without the mat_path/ch_idx/tr_idx header)
 """
 from __future__ import annotations
@@ -12,11 +12,11 @@ from pathlib import Path
 
 
 def _load_prompt() -> str:
-    p = Path(__file__).parent.parent / "prompts" / "codegen.md"
+    p = Path(__file__).parent / "prompts" / "codegen.md"
     return p.read_text(encoding="utf-8")
 
 
-# ── write_and_run tool definition ─────────────────────────────────────────────
+# -- Tool schemas for CodeGen ------------------------------------------------
 
 BASH_TOOL: dict = {
     "name": "bash_execute",
@@ -65,7 +65,7 @@ WRITE_AND_RUN_TOOL: dict = {
             "code": {
                 "type": "string",
                 "description": (
-                    "The Python script BODY — do not include the header lines "
+                    "The Python script BODY -- do not include the header lines "
                     "(mat_path, ch_idx, tr_idx, import json). Those are prepended automatically."
                 ),
             }
@@ -75,7 +75,7 @@ WRITE_AND_RUN_TOOL: dict = {
 }
 
 
-# ── Custom ToolExecutor ────────────────────────────────────────────────────────
+# -- Custom ToolExecutor -----------------------------------------------------
 
 class CodeGenExecutor:
     """Executes write_and_run by safely writing code via base64 and running it."""
@@ -83,7 +83,7 @@ class CodeGenExecutor:
     def __init__(self, header: str, project_dir: str | None = None):
         self.header = header
         self.project_dir = project_dir
-        self.last_successful_body: str | None = None  # body of last run that produced valid JSON
+        self.last_successful_body: str | None = None
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         if tool_name == "write_and_run":
@@ -95,7 +95,7 @@ class CodeGenExecutor:
         return f"[CodeGenExecutor] Unknown tool: {tool_name}"
 
     async def _bash(self, inp: dict) -> str:
-        from subagents.primitives.bash import bash
+        from tools.bash import bash
         result = await bash(
             cmd=inp["command"],
             cwd=inp.get("cwd", self.project_dir),
@@ -117,13 +117,13 @@ class CodeGenExecutor:
             return f"Could not read {path.name}: {e}"
         chunk = text[:max_chars]
         remaining = max(0, len(text) - max_chars)
-        footer = f"\n[{remaining} more chars — use offset_chars to page]" if remaining else ""
+        footer = f"\n[{remaining} more chars -- use offset_chars to page]" if remaining else ""
         return chunk + footer
 
     async def _write_and_run(self, inp: dict) -> str:
         import base64
         import json as _json
-        from subagents.primitives.bash import bash
+        from tools.bash import bash
 
         body = inp.get("code", "")
         full_code = self.header + "\n" + body
@@ -143,7 +143,6 @@ class CodeGenExecutor:
         result = await bash(cmd, cwd=self.project_dir, timeout=30)
         stdout = result.stdout or ""
 
-        # Validate if stdout looks like Plotly JSON
         plot_out = stdout.split("STDERR:")[0].strip() if "STDERR:" in stdout else stdout.strip()
         stderr_out = stdout.split("STDERR:", 1)[1].strip() if "STDERR:" in stdout else ""
 
@@ -151,7 +150,7 @@ class CodeGenExecutor:
             try:
                 parsed = _json.loads(plot_out)
                 if "data" in parsed and "layout" in parsed:
-                    self.last_successful_body = body  # save before returning
+                    self.last_successful_body = body
                     return f"SUCCESS: stdout is valid Plotly JSON ({len(plot_out)} chars)\n{plot_out[:200]}..."
                 return f"stdout is JSON but missing 'data' or 'layout' keys: {list(parsed.keys())}"
             except _json.JSONDecodeError:
@@ -162,7 +161,7 @@ class CodeGenExecutor:
         return "No output produced (missing print(json.dumps(fig))?)."
 
 
-# ── Main entry point ───────────────────────────────────────────────────────────
+# -- Main entry point --------------------------------------------------------
 
 async def codegen(
     description: str,
@@ -175,17 +174,17 @@ async def codegen(
     prior_script: str | None = None,
     on_event=None,
 ) -> str | None:
-    """Generate a working Plotly plot script via generate→run→fix loop.
+    """Generate a working Plotly plot script via generate->run->fix loop.
 
     Returns the script BODY (without header), or None if all attempts failed.
     """
-    from subagents.base import SubagentConfig, invoke
+    from agents.runner import SubagentConfig, invoke
     import config as cfg
 
     mat_path = Path(mat_path)
     project_dir = Path(project_dir)
 
-    # ── Build context ──────────────────────────────────────────────────────────
+    # Build context
     summary = ""
     summary_path = project_dir / "project_summary.md"
     if summary_path.exists():
@@ -196,7 +195,7 @@ async def codegen(
         rp = Path(ref_file_path)
         if rp.exists():
             lang = "matlab" if rp.suffix == ".m" else "python"
-            note = " (MATLAB — translate visualization logic to Python/Plotly)" if lang == "matlab" else ""
+            note = " (MATLAB -- translate visualization logic to Python/Plotly)" if lang == "matlab" else ""
             ref_section = (
                 f"\n\n## Reference file: `{rp.name}`{note}\n```{lang}\n"
                 f"{rp.read_text(errors='replace')[:6000]}\n```"
@@ -204,11 +203,10 @@ async def codegen(
 
     T, C, N = dims if dims else ("?", "?", "?")
     prior_section = (
-        f"\n\n## Previous attempt (failed — improve this):\n```python\n{prior_script}\n```"
+        f"\n\n## Previous attempt (failed -- improve this):\n```python\n{prior_script}\n```"
         if prior_script else ""
     )
 
-    # ── Script header (prepended to every write_and_run call) ─────────────────
     header = "\n".join([
         "import json",
         f"mat_path = r'{mat_path}'",
@@ -216,7 +214,6 @@ async def codegen(
         f"tr_idx = {tr_idx}",
     ])
 
-    # ── User message ───────────────────────────────────────────────────────────
     user_message = f"""Generate a working Python/Plotly signal plot script.
 
 ## Dataset context
@@ -224,8 +221,8 @@ async def codegen(
 
 ## Sample .mat file
 Path: `{mat_path}`
-Shape: T={T} timepoints × C={C} channels × N={N} trials
-h5py keys: `epoched_data` (T×C×N), `time` (T,), `new_elect_vals` (C,) — electrode region codes{ref_section}{prior_section}
+Shape: T={T} timepoints x C={C} channels x N={N} trials
+h5py keys: `epoched_data` (TxCxN), `time` (T,), `new_elect_vals` (C,) -- electrode region codes{ref_section}{prior_section}
 
 ## Header already injected (do NOT repeat these lines in your code)
 ```python
@@ -238,7 +235,6 @@ h5py keys: `epoched_data` (T×C×N), `time` (T,), `new_elect_vals` (C,) — elec
 Write the script body, call write_and_run to test it, fix errors, and repeat until successful.
 When done, output ONLY the final working script body."""
 
-    # ── Config and executor ────────────────────────────────────────────────────
     sc = SubagentConfig(
         model=cfg.CODE_MODEL,
         system_prompt=_load_prompt(),
@@ -250,7 +246,6 @@ When done, output ONLY the final working script body."""
 
     executor = CodeGenExecutor(header=header, project_dir=str(project_dir))
 
-    # Wrap events for activity log
     sub_on_event = None
     if on_event:
         async def sub_on_event(event: dict):
@@ -266,14 +261,10 @@ When done, output ONLY the final working script body."""
                           tool_executor=executor, on_event=sub_on_event)
 
     code = result.text.strip()
-    # Strip accidental markdown fences
     code = re.sub(r'^```\w*\s*', '', code)
     code = re.sub(r'\s*```$', '', code)
     code = code.strip()
 
-    # Syntax check — if the model returned natural language instead of code
-    # (common when it stops after seeing SUCCESS without a text turn), fall back
-    # to the last body that actually produced valid Plotly JSON during the loop.
     if code:
         try:
             compile(code, "<codegen>", "exec")

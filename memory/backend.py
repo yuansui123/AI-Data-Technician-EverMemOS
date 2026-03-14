@@ -85,7 +85,7 @@ def get_memory_backend(project_dir: str | Path) -> MemoryBackend:
     import config
     if config.MEMORY_BACKEND == "file":
         return FileMemoryBackend(project_dir)
-    if config.MEMORY_BACKEND == "evermemos":
+    if config.MEMORY_BACKEND.startswith("evermemos"):
         from memory.evermemos import EverMemOSBackend  # deferred import
         return EverMemOSBackend(project_dir)
     raise ValueError(f"Unknown MEMORY_BACKEND: {config.MEMORY_BACKEND!r}")

@@ -68,7 +68,7 @@ async def build_context(
 
     if total > AUTO_COMPACT_THRESHOLD and len(turns) > 10:
         # deferred import to avoid circular dependency at load time
-        from subagents.reasoners.think import compact_turns
+        from agents.think import compact_turns
 
         compact = await compact_turns(session.oldest_turns(20))
         turns = [{"role": "summary", "content": compact}] + session.recent_turns(5)

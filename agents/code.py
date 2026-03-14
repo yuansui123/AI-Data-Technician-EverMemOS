@@ -1,4 +1,4 @@
-"""Code primitive — claude-sonnet-4-6, writes files only, never executes.
+"""Code agent — claude-sonnet-4-6, writes files only, never executes.
 
 Input:  feature_gap_description + 2-3 existing feature file snippets as context
 Output: writes draft to tmp/code_drafts/, then moves to lib/features/derived/
@@ -8,7 +8,6 @@ Limit: 1 API call, max 3 tool uses (file writes only).
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 
@@ -66,7 +65,6 @@ async def code(
         block.text for block in response.content if block.type == "text"
     )
 
-    # extract code block
     code_text = ""
     filename = "generated_feature.py"
 
@@ -87,13 +85,11 @@ async def code(
 
     code_text = "\n".join(code_lines)
 
-    # save draft
     draft_dir = Path(project_dir or ".") / "tmp" / "code_drafts"
     draft_dir.mkdir(parents=True, exist_ok=True)
     draft_path = draft_dir / Path(filename).name
     draft_path.write_text(code_text, encoding="utf-8")
 
-    # move to output_dir if provided
     moved_path = None
     if output_dir:
         dest = Path(output_dir) / Path(filename).name

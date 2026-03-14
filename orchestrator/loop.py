@@ -331,19 +331,12 @@ class OrchestratorToolExecutor:
             )
 
         if tool_name == "read_file":
-            path = Path(inp["path"])
-            max_chars = int(inp.get("max_chars", 8000))
-            offset = int(inp.get("offset_chars", 0))
-            if not path.exists():
-                return {"response": f"File not found: {path}"}
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except Exception as e:
-                return {"response": f"Could not read {path.name}: {e}"}
-            chunk = text[offset: offset + max_chars]
-            remaining = max(0, len(text) - offset - max_chars)
-            footer = f"\n\n[{remaining} more characters — call read_file with offset_chars={offset + max_chars}]" if remaining else ""
-            return {"response": f"```{path.suffix.lstrip('.')}\n{chunk}\n```{footer}"}
+            from tools.read_file import read_file
+            return read_file(
+                path=inp["path"],
+                max_chars=int(inp.get("max_chars", 8000)),
+                offset_chars=int(inp.get("offset_chars", 0)),
+            )
 
         if tool_name == "optimize_pattern":
             from workflows.optimize_pattern import optimize_pattern
@@ -371,7 +364,7 @@ class OrchestratorToolExecutor:
             return await apply_rules(p, self.memory_backend, inp.get("pattern"))
 
         if tool_name == "statistics":
-            from subagents.reasoners.statistics import statistics
+            from agents.statistics import statistics
             return await statistics(
                 task=inp["task"],
                 pattern=inp.get("pattern"),
@@ -381,17 +374,17 @@ class OrchestratorToolExecutor:
             )
 
         if tool_name == "explore":
-            from subagents.reasoners.explore import explore
+            from agents.explore import explore
             return await explore(inp["data_dir"], inp["task"], p, self.carry,
                                  on_event=self.on_event)
 
         if tool_name == "vision_analyze":
-            from subagents.primitives.vision import vision
+            from tools.vision import vision
             result = await vision(inp["image_path"], context=inp.get("context"))
             return result  # already a dict
 
         if tool_name == "bash":
-            from subagents.primitives.bash import bash
+            from tools.bash import bash
             result = await bash(inp["command"], cwd=inp.get("cwd", str(p)))
             out = result.stdout or ""
             if result.stderr:
@@ -399,7 +392,7 @@ class OrchestratorToolExecutor:
             return {"stdout": out or "(no output)"}
 
         if tool_name == "show_plot":
-            from subagents.primitives.bash import bash
+            from tools.bash import bash
             import json as _json
             code = inp["python_code"]
             title = inp.get("title", "Plot")
@@ -433,7 +426,7 @@ class OrchestratorToolExecutor:
                 answer = await asyncio.wait_for(self.answer_queue.get(), timeout=600)
             else:
                 # CLI fallback
-                from orchestrator.tools import ask_user as _cli_ask_user
+                from tools.ask_user import ask_user as _cli_ask_user
                 answer = await _cli_ask_user(question)
             return {"user_answer": answer}
 
@@ -463,7 +456,7 @@ class OrchestratorToolExecutor:
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def _load_system_prompt(project_dir: Path, summary: str, instructions: str) -> str:
-    prompt_path = Path(__file__).parent.parent / "subagents" / "prompts" / "orchestrator.md"
+    prompt_path = Path(__file__).parent.parent / "agents" / "prompts" / "orchestrator.md"
     base = prompt_path.read_text(encoding="utf-8")
     tmp_dir = project_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -484,7 +477,7 @@ async def run(
     answer_queue=None,
 ) -> str:
     from session.context_builder import build_context
-    from subagents.base import SubagentConfig, invoke, ToolExecutor
+    from agents.runner import SubagentConfig, invoke, ToolExecutor
     import config
 
     project_dir = Path(project_dir)

@@ -1,12 +1,16 @@
-"""Unified subagent invocation layer.
+"""Agent runner — the LLM loop engine.
 
-All subagent calls go through invoke().  Primitives call this with max_iterations=1
-and no tools.  Reasoners call it with a tool list and a ToolExecutor instance.
+All LLM calls go through invoke(). Single-pass agents use max_iterations=1.
+Multi-pass agents use max_iterations>1 with a ToolExecutor.
+
+run_agent() is the high-level interface for spawning a fresh agent with
+a prompt, tools, and iteration limit.
 """
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Awaitable
 
 
@@ -29,15 +33,16 @@ class SubagentResult:
     usage: dict                        # prompt_tokens, output_tokens, total_tokens
 
 
-# ── Tool executor protocol ─────────────────────────────────────────────────────
+# -- Tool executor -----------------------------------------------------------
 
 ToolExecutorFn = Callable[[str, dict], Awaitable[str]]
 
 
 class ToolExecutor:
-    """Dispatches tool_use blocks to the appropriate primitive handler.
+    """Dispatches tool_use blocks to the appropriate tool handler.
 
-    Extend by registering additional handlers for domain tools.
+    Handles bash_execute, vision_analyze, read_file by default.
+    Extend by registering additional handlers.
     """
 
     def __init__(self, project_dir: str | None = None):
@@ -48,6 +53,7 @@ class ToolExecutor:
     def _register_defaults(self) -> None:
         self._handlers["bash_execute"] = self._bash
         self._handlers["vision_analyze"] = self._vision
+        self._handlers["read_file"] = self._read_file
 
     def register(self, name: str, fn: ToolExecutorFn) -> None:
         self._handlers[name] = fn
@@ -62,7 +68,7 @@ class ToolExecutor:
             return f"[ToolExecutor] Error in {tool_name}: {exc}"
 
     async def _bash(self, inp: dict) -> str:
-        from subagents.primitives.bash import bash
+        from tools.bash import bash
         result = await bash(
             cmd=inp["command"],
             cwd=inp.get("cwd", self.project_dir),
@@ -74,15 +80,24 @@ class ToolExecutor:
         return out or "(no output)"
 
     async def _vision(self, inp: dict) -> str:
-        from subagents.primitives.vision import vision
+        from tools.vision import vision
         result = await vision(
             image_path=inp["image_path"],
             context=inp.get("context", {}),
         )
         return json.dumps(result, indent=2)
 
+    async def _read_file(self, inp: dict) -> str:
+        from tools.read_file import read_file
+        result = read_file(
+            path=inp["path"],
+            max_chars=int(inp.get("max_chars", 8000)),
+            offset_chars=int(inp.get("offset_chars", 0)),
+        )
+        return result.get("response", "")
 
-# ── Core invoke ───────────────────────────────────────────────────────────────
+
+# -- Core invoke -------------------------------------------------------------
 
 EventCallback = Callable[[dict], Awaitable[None]] | None
 
@@ -95,8 +110,8 @@ async def invoke(
 ) -> SubagentResult:
     """Call the LLM with a tool-use loop up to config.max_iterations.
 
-    For single-pass subagents (Plan, Think, Code) use max_iterations=1.
-    For tool-use reasoners (Explore, Statistics) pass a ToolExecutor.
+    For single-pass agents (think) use max_iterations=1.
+    For tool-use agents (explore, statistics) pass a ToolExecutor.
     """
     import asyncio
     import anthropic
@@ -126,15 +141,15 @@ async def invoke(
         if config.tools:
             kwargs["tools"] = config.tools
 
-        # API call — stream text deltas when on_event is provided
+        # API call with retry
         def _retry_delay(_exc, _attempt: int) -> float:
             if isinstance(_exc, anthropic.InternalServerError):
-                return 3.0 * (_attempt + 1)   # 3s, 6s, 9s, 12s
-            return 10.0 * (2 ** _attempt)      # 10s, 20s, 40s …
+                return 3.0 * (_attempt + 1)
+            return 10.0 * (2 ** _attempt)
 
         _debug_log_request(config, all_messages, iteration)
         text_parts: list[str] = []
-        _api_exc: Exception | None = None
+
         if on_event:
             for _attempt in range(6):
                 try:
@@ -143,10 +158,8 @@ async def invoke(
                             await on_event({"type": "text_delta", "delta": text})
                             text_parts.append(text)
                         response = await stream.get_final_message()
-                    _api_exc = None
                     break
                 except (anthropic.RateLimitError, anthropic.InternalServerError) as _exc:
-                    _api_exc = _exc
                     if _attempt == 5:
                         _debug_log_error(config, _exc)
                         raise
@@ -156,23 +169,20 @@ async def invoke(
             for _attempt in range(6):
                 try:
                     response = await client.messages.create(**kwargs)
-                    _api_exc = None
                     break
                 except (anthropic.RateLimitError, anthropic.InternalServerError) as _exc:
-                    _api_exc = _exc
                     if _attempt == 5:
                         _debug_log_error(config, _exc)
                         raise
                     await asyncio.sleep(_retry_delay(_exc, _attempt))
         iteration += 1
 
-        # accumulate usage
+        # Accumulate usage
         if hasattr(response, "usage") and response.usage:
             total_usage["input_tokens"] += getattr(response.usage, "input_tokens", 0)
             total_usage["output_tokens"] += getattr(response.usage, "output_tokens", 0)
 
-        # extract thinking and tool_use blocks from response
-        # (text_parts already populated from stream; for non-streaming, extract from content)
+        # Extract thinking and tool_use blocks
         tool_use_blocks: list[Any] = []
         for block in response.content:
             if block.type == "thinking":
@@ -184,22 +194,18 @@ async def invoke(
 
         iteration_text = "".join(text_parts)
         if iteration_text:
-            final_text = iteration_text  # keep last non-empty text across iterations
+            final_text = iteration_text
 
-        # single-pass or no tool calls → done
+        # Done conditions
         if response.stop_reason == "end_turn" or not tool_use_blocks:
             break
-
-        # max iterations reached → stop even if model wants more tools
         if iteration >= config.max_iterations:
             hit_iteration_limit = True
             break
-
-        # no executor → can't run tools
         if tool_executor is None:
             break
 
-        # execute tools and continue loop
+        # Execute tools and continue loop
         tool_results = []
         for block in tool_use_blocks:
             if on_event:
@@ -217,8 +223,7 @@ async def invoke(
         all_messages.append({"role": "assistant", "content": response.content})
         all_messages.append({"role": "user", "content": tool_results})
 
-    # If we exited the loop mid-tool-use (hit max_iterations while still calling tools,
-    # or produced no text at all), make one final no-tools call to get a summary response.
+    # Force a summary if we hit the limit mid-tool-use
     if (not final_text or hit_iteration_limit) and all_tool_calls and tool_executor is not None:
         summary_kwargs: dict[str, Any] = {
             "model": config.model,
@@ -276,7 +281,73 @@ async def invoke(
     return result
 
 
-# ── Debug logging helpers ──────────────────────────────────────────────────────
+# -- run_agent: high-level agent spawner ------------------------------------
+
+async def run_agent(
+    message: str,
+    prompt: str,
+    tools: list[dict] | None = None,
+    max_iterations: int = 1,
+    thinking_budget: int = 0,
+    max_tokens: int = 4096,
+    model: str | None = None,
+    project_dir: str | Path | None = None,
+    on_event: EventCallback = None,
+    agent_name: str | None = None,
+) -> SubagentResult:
+    """Spawn a fresh agent with the given configuration.
+
+    Args:
+        message: The task/user message to send.
+        prompt: Either a prompt filename (loads agents/prompts/{prompt}.md)
+                or raw prompt text if the file doesn't exist.
+        tools: Anthropic tool schemas. None = no tools (single-pass).
+        max_iterations: 1 = single-pass, >1 = tool-use loop.
+        thinking_budget: Extended thinking token budget. 0 = disabled.
+        max_tokens: Max response tokens.
+        model: Model ID override. Defaults to config.ORCHESTRATOR_MODEL.
+        project_dir: Working directory for tool execution.
+        on_event: Callback for streaming events.
+        agent_name: Label for sub-events (e.g. "explore", "statistics").
+    """
+    import config as cfg
+
+    # Load prompt from file or use raw text
+    prompt_file = Path(__file__).parent / "prompts" / f"{prompt}.md"
+    if prompt_file.exists():
+        system_prompt = prompt_file.read_text(encoding="utf-8")
+    else:
+        system_prompt = prompt
+
+    agent_config = SubagentConfig(
+        model=model or cfg.ORCHESTRATOR_MODEL,
+        system_prompt=system_prompt,
+        tools=tools or [],
+        thinking_budget=thinking_budget,
+        max_iterations=max_iterations,
+        max_tokens=max_tokens,
+    )
+
+    executor = ToolExecutor(project_dir=str(project_dir) if project_dir else None) if tools else None
+
+    # Wrap on_event to label sub-agent events
+    sub_on_event = None
+    if on_event and agent_name:
+        async def sub_on_event(event: dict):
+            if event["type"] == "tool_call":
+                await on_event({"type": "sub_tool_call", "subagent": agent_name,
+                                "tool": event["tool"], "input": event["input"]})
+            elif event["type"] == "tool_result":
+                await on_event({"type": "sub_tool_result", "subagent": agent_name,
+                                "tool": event["tool"], "result": event["result"]})
+    elif on_event:
+        sub_on_event = on_event
+
+    return await invoke(agent_config, [{"role": "user", "content": message}],
+                        tool_executor=executor, on_event=sub_on_event)
+
+
+# -- Debug logging helpers ---------------------------------------------------
 
 def _dbg_path() -> str | None:
     import os
@@ -295,7 +366,6 @@ def _dbg_write(text: str) -> None:
 
 
 def _debug_log_request(config: "SubagentConfig", messages: list, iteration: int) -> None:
-    """Log what is about to be sent to the LLM."""
     if not _dbg_path():
         return
     from datetime import datetime
@@ -318,7 +388,7 @@ def _debug_log_request(config: "SubagentConfig", messages: list, iteration: int)
             return " | ".join(parts)
         return str(content)[:600]
 
-    sep = "─" * 60
+    sep = "\u2500" * 60
     ts = datetime.now().strftime("%H:%M:%S")
     lines = [
         "",
@@ -326,7 +396,7 @@ def _debug_log_request(config: "SubagentConfig", messages: list, iteration: int)
         f"[{ts}] REQUEST  model={config.model}  iter={iteration+1}/{config.max_iterations}",
         "=" * 80,
         "SYSTEM:",
-        (config.system_prompt[:800] + "…") if len(config.system_prompt) > 800 else config.system_prompt,
+        (config.system_prompt[:800] + "\u2026") if len(config.system_prompt) > 800 else config.system_prompt,
         sep,
         "MESSAGES:",
     ]
@@ -340,33 +410,31 @@ def _debug_log_request(config: "SubagentConfig", messages: list, iteration: int)
 
 
 def _debug_log_result(config: "SubagentConfig", result: "SubagentResult") -> None:
-    """Log the final result after a successful invoke()."""
     if not _dbg_path():
         return
     from datetime import datetime
     ts = datetime.now().strftime("%H:%M:%S")
-    sep = "─" * 60
+    sep = "\u2500" * 60
     lines = [
         sep,
         f"[{ts}] RESULT  iters={result.iterations}  tokens={result.usage.get('total_tokens','?')}",
     ]
     if result.thinking:
-        lines += ["THINKING:", result.thinking[:600] + ("…" if len(result.thinking) > 600 else "")]
+        lines += ["THINKING:", result.thinking[:600] + ("\u2026" if len(result.thinking) > 600 else "")]
     for tc in result.tool_calls:
         inp_str = json.dumps(tc.get("input", {}), ensure_ascii=False)[:300]
         res_str = str(tc.get("result", ""))[:300]
-        lines.append(f"  TOOL → {tc.get('tool')}  {inp_str}")
-        lines.append(f"       ← {res_str}")
+        lines.append(f"  TOOL -> {tc.get('tool')}  {inp_str}")
+        lines.append(f"       <- {res_str}")
     lines += [
         "RESPONSE:",
-        result.text[:2000] + ("…" if len(result.text) > 2000 else ""),
+        result.text[:2000] + ("\u2026" if len(result.text) > 2000 else ""),
         "",
     ]
     _dbg_write("\n".join(lines) + "\n")
 
 
 def _debug_log_error(config: "SubagentConfig", exc: Exception) -> None:
-    """Log an API error."""
     if not _dbg_path():
         return
     from datetime import datetime

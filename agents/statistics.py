@@ -1,4 +1,4 @@
-"""Statistics reasoner — agentic tool-use loop [Bash, Vision], max 15 iterations.
+"""Statistics agent — agentic tool-use loop [Bash, Vision], max 15 iterations.
 
 Model: claude-sonnet-4-6
 Tools: bash_execute, vision_analyze + feature/rule/optimization tools
@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def _load_prompt() -> str:
-    p = Path(__file__).parent.parent / "prompts" / "statistics.md"
+    p = Path(__file__).parent / "prompts" / "statistics.md"
     return p.read_text(encoding="utf-8")
 
 
@@ -26,11 +26,10 @@ async def statistics(
     extra_tools: list[dict] | None = None,
 ) -> dict:
     """Run the Statistics agent and return a structured findings dict."""
-    from subagents.base import SubagentConfig, ToolExecutor, invoke
+    from agents.runner import SubagentConfig, ToolExecutor, invoke
     from tools import STATISTICS_TOOLS
     import config
 
-    # Build user message
     parts = [f"## Task\n{task}"]
     if pattern:
         parts.append(f"## Pattern\n{pattern}")
@@ -58,7 +57,6 @@ async def statistics(
 
     result = await invoke(cfg, [{"role": "user", "content": user_message}], tool_executor=executor)
 
-    # parse JSON from final response
     text = result.text.strip()
     if text.startswith("```"):
         text = text.split("```")[1]

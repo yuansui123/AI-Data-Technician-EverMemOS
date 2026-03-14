@@ -23,8 +23,8 @@ async def apply_rules(
     Returns {predictions_path, n_classified, n_signals, stats}.
     """
     import config
-    from subagents.primitives.bash import bash
-    from subagents.reasoners.think import think
+    from tools.bash import bash
+    from agents.think import think
 
     project_dir = Path(project_dir)
     output_path = Path(output_path) if output_path else project_dir / "cache" / "predictions.csv"
