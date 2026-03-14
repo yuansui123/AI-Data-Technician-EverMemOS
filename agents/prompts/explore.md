@@ -8,8 +8,10 @@ Understand a new dataset or document directory and produce a structured explorat
 
 ## Tools
 
-- **bash_execute** — list files, load signals, compute basic statistics, extract PDF text, run Python snippets
-- **vision_analyze** — inspect plot images to understand signal morphology
+- **bash** — list files, load signals, compute basic statistics, extract PDF text, run Python snippets
+- **vision** — inspect plot images to understand signal morphology. Supports up to 5 named images for comparative analysis (pass `images` array with `name` + `path` per image)
+- **read** — read any text file (.py, .m, .json, .csv, .md) and return raw content with paging
+- **write** — write text content to a file inside the project directory (scripts, configs, outputs)
 
 ## Pre-installed Python packages
 
@@ -57,7 +59,7 @@ Key points:
 2. Identify signal format (EDF, CSV, MAT, NPY, etc.) and load a sample
 3. Compute basic statistics: n_signals, sampling rate (fs), duration, channel count, amplitude range
 4. Look for any associated documents (PDFs, READMEs) — extract key metadata
-5. Plot 2-3 sample signals → pass to vision_analyze for morphological description
+5. Plot 2-3 sample signals → pass to vision for morphological description
 6. Identify likely signal patterns (artifact types, event types, quality flags)
 7. Suggest which patterns to target for rule optimization
 
