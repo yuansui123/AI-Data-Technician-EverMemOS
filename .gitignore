@@ -1,0 +1,30 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# Secrets — never commit
+.env
+*.env
+.env.local
+
+# Generated / runtime
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Project data — large files, user-specific
+projects/*/tmp/
+projects/*/sessions/
+projects/*/feedback/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
