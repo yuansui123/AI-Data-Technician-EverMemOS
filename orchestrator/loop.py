@@ -16,9 +16,13 @@ if TYPE_CHECKING:
     from session.session import Session
 
 
-# ── Orchestrator tool definitions (Anthropic JSON schema) ─────────────────────
+# ── Orchestrator tool definitions ──────────────────────────────────────────────
+# Tools import their schemas from tools/; workflow/agent schemas are inline.
 
-ORCHESTRATOR_TOOLS = [
+from tools import TOOL_SCHEMAS
+
+# Workflow schemas (no tool file — they dispatch to workflows/)
+_WORKFLOW_SCHEMAS = [
     {
         "name": "explore_dataset",
         "description": "Explore a dataset directory: list files, profile signals, compute basic statistics. Use when user provides a data path.",
@@ -33,9 +37,9 @@ ORCHESTRATOR_TOOLS = [
     {
         "name": "ingest_documents",
         "description": (
-            "Read PDFs or text documents and synthesise their content into project_summary.md "
-            "via the Think subagent. Use for research papers, protocol descriptions, README files. "
-            "NOT for .mat, .m, .py, or binary data files — use read_file for those."
+            "Read PDFs or text documents and synthesise their content into project_memory.md "
+            "via the Think agent. Use for research papers, protocol descriptions, README files. "
+            "NOT for .mat, .m, .py, or binary data files — use read for those."
         ),
         "input_schema": {
             "type": "object",
@@ -48,30 +52,6 @@ ORCHESTRATOR_TOOLS = [
                 "data_dir": {"type": "string", "description": "Optional: directory to scan for files"},
             },
             "required": [],
-        },
-    },
-    {
-        "name": "read_file",
-        "description": (
-            "Read any file and return its raw content — deterministic, no LLM. "
-            "Use this to inspect scripts (.py, .m), config files, CSVs, text files, or any file "
-            "whose content you need to see. Returns up to max_chars characters (default 8000). "
-            "For .mat binary data files use explore_dataset instead."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Absolute path to the file"},
-                "max_chars": {
-                    "type": "integer",
-                    "description": "Max characters to return (default 8000)",
-                },
-                "offset_chars": {
-                    "type": "integer",
-                    "description": "Skip first N characters (for paging through large files)",
-                },
-            },
-            "required": ["path"],
         },
     },
     {
@@ -150,6 +130,10 @@ ORCHESTRATOR_TOOLS = [
             "required": [],
         },
     },
+]
+
+# Agent schemas (LLM reasoning loops available to orchestrator)
+_AGENT_SCHEMAS = [
     {
         "name": "statistics",
         "description": "Run quantitative analysis: feature distributions, group comparisons, correlation, model fitting.",
@@ -174,121 +158,13 @@ ORCHESTRATOR_TOOLS = [
             "required": ["data_dir", "task"],
         },
     },
-    {
-        "name": "vision_analyze",
-        "description": (
-            "Send a single image to Gemini for visual analysis. Use when a plot or image already "
-            "exists on disk and you want a description or pattern assessment. "
-            "Returns: description, likely_pattern, rule_assessment, suggested_feature_gap."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "image_path": {"type": "string", "description": "Absolute path to the PNG/JPG file."},
-                "context": {
-                    "type": "object",
-                    "description": "Optional context: signal_id, known_patterns, current_rule, TP/FP/FN/TN counts.",
-                },
-            },
-            "required": ["image_path"],
-        },
-    },
-    {
-        "name": "bash",
-        "description": (
-            "Execute a shell command via Windows PowerShell. "
-            "For multi-line Python: write to a temp file using a here-string, then run it: "
-            "$code = @'\\nimport numpy as np\\nprint(np.zeros(3))\\n'@; "
-            "$code | Out-File -Encoding utf8 C:\\Windows\\Temp\\tmp.py; python C:\\Windows\\Temp\\tmp.py. "
-            "Use Get-ChildItem or dir for listing. Select-Object -First N replaces head."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Shell command to run"},
-                "cwd": {"type": "string", "description": "Optional working directory"},
-            },
-            "required": ["command"],
-        },
-    },
-    {
-        "name": "show_plot",
-        "description": (
-            "Generate an interactive Plotly chart and display it as a popup in the browser. "
-            "Write Python code that builds a Plotly figure dict with 'data' and 'layout' keys "
-            "and ends with `print(json.dumps(fig))`. "
-            "Dark theme: paper_bgcolor='#0d1117', plot_bgcolor='#161b22', font color white. "
-            "The chart appears immediately as an interactive popup with zoom, pan, and hover. "
-            "Use this instead of matplotlib for ALL visualizations."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "python_code": {
-                    "type": "string",
-                    "description": "Python code ending with `print(json.dumps(fig))` where fig is a Plotly figure dict.",
-                },
-                "title": {"type": "string", "description": "Title shown in the popup header."},
-            },
-            "required": ["python_code", "title"],
-        },
-    },
-    {
-        "name": "ask_user",
-        "description": "Ask the user a clarifying question and wait for their answer. Use only when genuinely blocked.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "question": {"type": "string", "description": "The question to ask"}
-            },
-            "required": ["question"],
-        },
-    },
-    {
-        "name": "todo_write",
-        "description": (
-            "Create or update the session todo list. "
-            "Use to track multi-step plans and record what was actually done. "
-            "IMPORTANT: You may only set status='done' or status='failed' when you provide "
-            "at least one evidence item containing a real tool result. "
-            "Never mark a todo done without evidence."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "todos": {
-                    "type": "array",
-                    "description": "Full replacement todo list for this session.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id":     {"type": "string", "description": "Short unique id, e.g. 'a1f'"},
-                            "title":  {"type": "string", "description": "Step description"},
-                            "status": {
-                                "type": "string",
-                                "enum": ["pending", "running", "done", "failed"],
-                            },
-                            "evidence": {
-                                "type": "array",
-                                "description": "Proof this step completed. Required for done/failed.",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "type":   {"type": "string", "description": "bash|file|vision|text"},
-                                        "name":   {"type": "string", "description": "Tool name or filename"},
-                                        "result": {"type": "string", "description": "Key excerpt from result"},
-                                    },
-                                    "required": ["type", "name", "result"],
-                                },
-                            },
-                        },
-                        "required": ["id", "title", "status"],
-                    },
-                }
-            },
-            "required": ["todos"],
-        },
-    },
+]
+
+# Combine all: tools + agents + workflows
+ORCHESTRATOR_TOOLS = [
+    *TOOL_SCHEMAS,
+    *_AGENT_SCHEMAS,
+    *_WORKFLOW_SCHEMAS,
 ]
 
 
@@ -301,7 +177,7 @@ class OrchestratorToolExecutor:
         self.carry = dict(context_carry)
         self.session = session  # held so todo_write can update session.todos in place
         self.on_event = on_event  # forwarded to workflows so subagent steps are visible
-        self.answer_queue = answer_queue  # asyncio.Queue for web-mode ask_user answers
+        self.answer_queue = answer_queue  # asyncio.Queue for ask_user answers from browser
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         try:
@@ -330,9 +206,9 @@ class OrchestratorToolExecutor:
                 inp.get("data_dir"), self.carry
             )
 
-        if tool_name == "read_file":
-            from tools.read_file import read_file
-            return read_file(
+        if tool_name == "read":
+            from tools.read import read
+            return read(
                 path=inp["path"],
                 max_chars=int(inp.get("max_chars", 8000)),
                 offset_chars=int(inp.get("offset_chars", 0)),
@@ -378,9 +254,21 @@ class OrchestratorToolExecutor:
             return await explore(inp["data_dir"], inp["task"], p, self.carry,
                                  on_event=self.on_event)
 
-        if tool_name == "vision_analyze":
+        if tool_name == "write":
+            from tools.write import write
+            return write(
+                path=inp["path"],
+                content=inp["content"],
+                project_dir=p,
+            )
+
+        if tool_name == "vision":
             from tools.vision import vision
-            result = await vision(inp["image_path"], context=inp.get("context"))
+            result = await vision(
+                image_path=inp.get("image_path"),
+                images=inp.get("images"),
+                context=inp.get("context"),
+            )
             return result  # already a dict
 
         if tool_name == "bash":
@@ -391,7 +279,7 @@ class OrchestratorToolExecutor:
                 out += f"\n[stderr] {result.stderr}"
             return {"stdout": out or "(no output)"}
 
-        if tool_name == "show_plot":
+        if tool_name == "plot":
             from tools.bash import bash
             import json as _json
             code = inp["python_code"]
@@ -416,21 +304,15 @@ class OrchestratorToolExecutor:
                 })
             return {"response": f"Plot '{title}' displayed in the browser."}
 
-        if tool_name == "ask_user":
+        if tool_name == "ask":
             import asyncio
             question = inp["question"]
             if self.on_event:
                 await self.on_event({"type": "ask_user", "question": question})
-            if self.answer_queue is not None:
-                # Web mode: wait for user to type answer in the chat input
-                answer = await asyncio.wait_for(self.answer_queue.get(), timeout=600)
-            else:
-                # CLI fallback
-                from tools.ask_user import ask_user as _cli_ask_user
-                answer = await _cli_ask_user(question)
+            answer = await asyncio.wait_for(self.answer_queue.get(), timeout=600)
             return {"user_answer": answer}
 
-        if tool_name == "todo_write":
+        if tool_name == "todo":
             return self._todo_write(inp["todos"])
 
         raise ValueError(f"Unknown tool: {tool_name!r}")
@@ -455,16 +337,14 @@ class OrchestratorToolExecutor:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
-def _load_system_prompt(project_dir: Path, summary: str, instructions: str) -> str:
+def _load_system_prompt(project_dir: Path, memory: str) -> str:
     prompt_path = Path(__file__).parent.parent / "agents" / "prompts" / "orchestrator.md"
     base = prompt_path.read_text(encoding="utf-8")
     tmp_dir = project_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     parts = [base, f"\n## Current Session Paths\n- **Project directory:** `{project_dir}`\n- **Save all generated plots and output files to:** `{tmp_dir}`\n  (Never save to the source data directory.)"]
-    if instructions:
-        parts.append(f"\n## Project Instructions\n{instructions}")
-    if summary:
-        parts.append(f"\n## Project Summary (memory)\n{summary}")
+    if memory:
+        parts.append(f"\n## Project Memory\n{memory}")
     return "\n".join(parts)
 
 
@@ -494,11 +374,10 @@ async def run(
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_input})
 
-    # System prompt = orchestrator.md + project context
+    # System prompt = orchestrator.md + project memory
     system_prompt = _load_system_prompt(
         project_dir,
-        summary=ctx.get("summary", ""),
-        instructions=ctx.get("instructions", ""),
+        memory=ctx.get("memory", ""),
     )
 
     # Tool executor

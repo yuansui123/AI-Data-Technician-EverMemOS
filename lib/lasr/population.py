@@ -15,8 +15,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from tools.lasr.evaluation import evaluate_rule
-from tools.lasr.pareto import extract_pareto_front, pareto_summary
+from lib.lasr.evaluation import evaluate_rule
+from lib.lasr.pareto import extract_pareto_front, pareto_summary
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ class RulePopulation:
 
         Returns the list of new rules that were actually added (post-dedup).
         """
-        from tools.lasr.evolution import numeric_mutate
+        from lib.lasr.evolution import numeric_mutate
 
         self._generation += 1
 

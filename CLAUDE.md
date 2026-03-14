@@ -15,7 +15,11 @@ C:\Users\yuans\Desktop\ClaudeCode\v4cedars\lib\
 ```
 All imports from v4cedars use this path. Never duplicate these files here.
 
-LASR optimization code (evaluation, evolution, pareto, population, sampling) has been copied locally to `tools/lasr/` with imports updated.
+---
+
+## Local libraries (`lib/`)
+
+- `lib/lasr/` — LASR optimization engine (evaluation, evolution, pareto, population, sampling). Copied from v4cedars with imports updated. Import as `from lib.lasr import ...`.
 
 ---
 
@@ -23,16 +27,20 @@ LASR optimization code (evaluation, evolution, pareto, population, sampling) has
 
 **Tools** (`tools/`) — deterministic, no LLM:
 - `bash.py` — subprocess execution via PowerShell
-- `vision.py` — Gemini 2.0 Flash, image → structured JSON
-- `read_file.py` — file reader with paging
-- `ask_user.py` — human-in-the-loop input
-- `lasr/` — LASR optimization (evaluation, evolution, pareto, population, sampling)
+- `vision.py` — Gemini Flash, image(s) → structured JSON. Supports up to 5 named images for comparative analysis.
+- `read.py` — file reader with paging
+- `write.py` — file writer with project directory safety guard
+- `ask.py` — human-in-the-loop input
+- `todo.py` — session task list schema (executor in orchestrator)
+- `plot.py` — Plotly chart schema (executor in orchestrator)
+
+`tools/__init__.py` exports `TOOL_SCHEMAS` (all 7 tool schemas), `EXPLORE_TOOLS`, and `STATISTICS_TOOLS`.
 
 **Agents** (`agents/`) — all LLM invocations via `invoke()`:
 - `runner.py` — core LLM loop engine (`invoke()`, `run_agent()`, `SubagentConfig`, `ToolExecutor`)
 - `think.py` — single-pass Claude + extended thinking (summaries, compaction, LASR prompts)
-- `explore.py` — tool-use loop [Bash, Vision], max 10 iter
-- `statistics.py` — tool-use loop [Bash, Vision], max 15 iter
+- `explore.py` — tool-use loop [Bash, Vision, Read, Write], max 10 iter
+- `statistics.py` — tool-use loop [Bash, Vision, Read, Write], max 15 iter
 - `codegen.py` — generate→run→fix loop for Plotly scripts
 - `code.py` — single-pass code writer (feature/plot functions)
 
@@ -40,22 +48,21 @@ LASR optimization code (evaluation, evolution, pareto, population, sampling) has
 - `explore_dataset`, `ingest_documents`, `optimize_pattern`
 - `teach_session`, `review_results`, `apply_rules`
 
-**Orchestrator** (`orchestrator/loop.py`) — the outer LLM agent loop with all tool schemas.
+**Orchestrator** (`orchestrator/loop.py`) — the outer LLM agent loop. Imports `TOOL_SCHEMAS` from `tools/` and combines with inline agent/workflow schemas.
 
 ---
 
-## Context management (like Claude Code)
-- `project_instructions.md` per project — static, like CLAUDE.md
-- `project_summary.md` per project — agent-maintained by Think after milestones
+## Context management
+- `project_memory.md` per project — agent-maintained by Think after milestones
 - `sessions/session_{id}.json` — conversation turns, one per session
 - Auto-compact via Think when context > 40k tokens
-- In-context scratchpad (TodoWrite equivalent) maintained by orchestrator
+- In-context todo list maintained by orchestrator
 - `context_carry` dict passes facts between agent steps
 
 ---
 
 ## Memory backend
-- Default: `FileMemoryBackend` — reads/writes `project_summary.md`
+- Default: `FileMemoryBackend` — reads/writes `project_memory.md`
 - Future: `EverMemOSBackend` at `localhost:1995/api/v1` — swap via `MEMORY_BACKEND` in `config.py`
 - Orchestrator only calls `memory_backend.store()` / `memory_backend.get_summary()`
 
@@ -73,7 +80,7 @@ LASR optimization code (evaluation, evolution, pareto, population, sampling) has
 ## Coding conventions
 - All LLM calls go through `agents/runner.py:invoke()`
 - Tools never call agents or other tools
-- Agents use [Bash, Vision] as tools — never other agents
+- Agents use [Bash, Vision, Read, Write] as tools — never other agents
 - Workflows are plain Python async functions — no LLM at the workflow level
 - Tool definitions live in `tools/` as Anthropic JSON schema dicts
 - System prompts live in `agents/prompts/*.md`

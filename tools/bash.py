@@ -84,7 +84,7 @@ async def bash(
 # -- Anthropic tool schema --------------------------------------------------
 
 SCHEMA: dict = {
-    "name": "bash_execute",
+    "name": "bash",
     "description": (
         "Execute a shell command via Windows PowerShell. "
         "Use this to run Python scripts, list files, compute statistics, extract PDF text. "

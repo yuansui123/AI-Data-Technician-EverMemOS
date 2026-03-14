@@ -14,7 +14,7 @@ import random
 import re
 from typing import Dict, List, Optional
 
-from tools.lasr.evaluation import evaluate_rule
+from lib.lasr.evaluation import evaluate_rule
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ def numeric_mutate(
     list of Rule objects (only those that parse and evaluate successfully).
     """
     # Late import to avoid circular dependency
-    from tools.lasr.population import Rule, count_complexity
+    from lib.lasr.population import Rule, count_complexity
 
     rule_str = rule.rule if hasattr(rule, "rule") else str(rule)
 

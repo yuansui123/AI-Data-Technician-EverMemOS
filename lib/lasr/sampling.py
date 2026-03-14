@@ -47,7 +47,7 @@ def score_uncertainty(
     if not rules:
         return 1.0  # No rules => total uncertainty
 
-    from tools.lasr.evaluation import _translate_rule, _safe_namespace
+    from lib.lasr.evaluation import _translate_rule, _safe_namespace
 
     votes: List[bool] = []
     ns = _safe_namespace(features, embedding_sim)

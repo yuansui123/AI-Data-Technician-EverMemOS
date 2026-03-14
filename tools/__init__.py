@@ -2,15 +2,25 @@
 
 from tools.bash import bash, SCHEMA as BASH_SCHEMA
 from tools.vision import vision, SCHEMA as VISION_SCHEMA
-from tools.read_file import read_file, SCHEMA as READ_FILE_SCHEMA
-from tools.ask_user import ask_user, SCHEMA as ASK_USER_SCHEMA
+from tools.read import read, SCHEMA as READ_SCHEMA
+from tools.write import write, SCHEMA as WRITE_SCHEMA
+from tools.ask import SCHEMA as ASK_SCHEMA
+from tools.todo import SCHEMA as TODO_SCHEMA
+from tools.plot import SCHEMA as PLOT_SCHEMA
 
-# Tool lists for agents
-EXPLORE_TOOLS = [BASH_SCHEMA, VISION_SCHEMA]
-STATISTICS_TOOLS = [BASH_SCHEMA, VISION_SCHEMA]
+# All tool schemas — single import for orchestrator
+TOOL_SCHEMAS = [
+    BASH_SCHEMA, READ_SCHEMA, WRITE_SCHEMA, VISION_SCHEMA,
+    ASK_SCHEMA, TODO_SCHEMA, PLOT_SCHEMA,
+]
+
+# Tool lists for agents (bash + vision + read + write)
+EXPLORE_TOOLS = [BASH_SCHEMA, VISION_SCHEMA, READ_SCHEMA, WRITE_SCHEMA]
+STATISTICS_TOOLS = [BASH_SCHEMA, VISION_SCHEMA, READ_SCHEMA, WRITE_SCHEMA]
 
 __all__ = [
-    "bash", "vision", "read_file", "ask_user",
-    "BASH_SCHEMA", "VISION_SCHEMA", "READ_FILE_SCHEMA", "ASK_USER_SCHEMA",
-    "EXPLORE_TOOLS", "STATISTICS_TOOLS",
+    "bash", "vision", "read", "write",
+    "BASH_SCHEMA", "VISION_SCHEMA", "READ_SCHEMA", "WRITE_SCHEMA", "ASK_SCHEMA",
+    "TODO_SCHEMA", "PLOT_SCHEMA",
+    "TOOL_SCHEMAS", "EXPLORE_TOOLS", "STATISTICS_TOOLS",
 ]

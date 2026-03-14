@@ -41,7 +41,7 @@ ToolExecutorFn = Callable[[str, dict], Awaitable[str]]
 class ToolExecutor:
     """Dispatches tool_use blocks to the appropriate tool handler.
 
-    Handles bash_execute, vision_analyze, read_file by default.
+    Handles bash, vision, read by default.
     Extend by registering additional handlers.
     """
 
@@ -51,9 +51,10 @@ class ToolExecutor:
         self._register_defaults()
 
     def _register_defaults(self) -> None:
-        self._handlers["bash_execute"] = self._bash
-        self._handlers["vision_analyze"] = self._vision
-        self._handlers["read_file"] = self._read_file
+        self._handlers["bash"] = self._bash
+        self._handlers["vision"] = self._vision
+        self._handlers["read"] = self._read_file
+        self._handlers["write"] = self._write_file
 
     def register(self, name: str, fn: ToolExecutorFn) -> None:
         self._handlers[name] = fn
@@ -82,17 +83,27 @@ class ToolExecutor:
     async def _vision(self, inp: dict) -> str:
         from tools.vision import vision
         result = await vision(
-            image_path=inp["image_path"],
-            context=inp.get("context", {}),
+            image_path=inp.get("image_path"),
+            images=inp.get("images"),
+            context=inp.get("context"),
         )
         return json.dumps(result, indent=2)
 
     async def _read_file(self, inp: dict) -> str:
-        from tools.read_file import read_file
-        result = read_file(
+        from tools.read import read
+        result = read(
             path=inp["path"],
             max_chars=int(inp.get("max_chars", 8000)),
             offset_chars=int(inp.get("offset_chars", 0)),
+        )
+        return result.get("response", "")
+
+    async def _write_file(self, inp: dict) -> str:
+        from tools.write import write
+        result = write(
+            path=inp["path"],
+            content=inp["content"],
+            project_dir=self.project_dir,
         )
         return result.get("response", "")
 

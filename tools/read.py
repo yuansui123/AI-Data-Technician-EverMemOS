@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def read_file(
+def read(
     path: str | Path,
     max_chars: int = 8000,
     offset_chars: int = 0,
@@ -24,7 +24,7 @@ def read_file(
     chunk = text[offset_chars: offset_chars + max_chars]
     remaining = max(0, len(text) - offset_chars - max_chars)
     footer = (
-        f"\n\n[{remaining} more characters -- call read_file with offset_chars={offset_chars + max_chars}]"
+        f"\n\n[{remaining} more characters -- call read with offset_chars={offset_chars + max_chars}]"
         if remaining else ""
     )
     return {"response": f"```{path.suffix.lstrip('.')}\n{chunk}\n```{footer}"}
@@ -33,7 +33,7 @@ def read_file(
 # -- Anthropic tool schema --------------------------------------------------
 
 SCHEMA: dict = {
-    "name": "read_file",
+    "name": "read",
     "description": (
         "Read any file and return its raw content -- deterministic, no LLM. "
         "Use this to inspect scripts (.py, .m), config files, CSVs, text files, or any file "
