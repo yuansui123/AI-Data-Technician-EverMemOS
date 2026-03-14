@@ -18,6 +18,7 @@ async def teach_session(
     n_signals: int = 10,
     on_event=None,
     answer_queue=None,
+    plot_script: str | None = None,
 ) -> dict:
     """Show signals one-by-one via modal popup, collect user labels.
 
@@ -47,6 +48,72 @@ async def teach_session(
                 "Please provide a valid data_dir pointing to a folder or file."
             )
         }
+
+    # ── View selection (only if no plot_script was pre-supplied) ─────────────
+    if plot_script is None:
+        await on_event({
+            "type": "ask_user",
+            "question": (
+                "**How would you like each signal displayed?**\n\n"
+                "Describe freely — for example:\n"
+                "- `default` — single channel time-series (fastest)\n"
+                "- `all channels stacked vertically for this trial`\n"
+                "- `MTL channels only, offset-stacked`\n"
+                "- `similar to my script at C:\\path\\to\\plot_script.py`\n"
+                "- `similar to the GUI in the user folder`"
+            ),
+        })
+        try:
+            view_desc = (await asyncio.wait_for(answer_queue.get(), timeout=180)).strip()
+        except asyncio.TimeoutError:
+            view_desc = "default"
+
+        if view_desc.lower() not in ("default", "skip", ""):
+            await on_event({"type": "ask_user",
+                            "question": "Generating plot layout — one moment..."})
+            import numpy as np
+            rng_preview = np.random.default_rng()
+            preview_mat = mat_files[rng_preview.integers(len(mat_files))]
+            dims = await _get_dims(preview_mat, bash, project_dir)
+            plot_script = await _generate_plot_script(
+                view_desc, project_dir, preview_mat, dims, bash, project_dir
+            )
+            if plot_script:
+                # Preview
+                tr_p = int(rng_preview.integers(dims[2])) if dims else 0
+                ch_p = int(rng_preview.integers(dims[1])) if dims else 0
+                preview_json, preview_err = await _run_plot_script(plot_script, preview_mat, ch_p, tr_p, bash, project_dir)
+                if preview_json:
+                    await on_event({"type": "show_plot", "plot_json": preview_json,
+                                    "title": f"Preview — {preview_mat.stem} tr{tr_p}"})
+                    await on_event({"type": "ask_user",
+                                    "question": "Does this layout look good? Reply `yes` to start, `default` to use single-channel, or describe a change."})
+                    try:
+                        confirm = (await asyncio.wait_for(answer_queue.get(), timeout=180)).strip().lower()
+                        if confirm == "default":
+                            plot_script = None
+                        elif confirm != "yes":
+                            # Try to refine based on feedback
+                            await on_event({"type": "ask_user",
+                                            "question": "Refining plot layout — one moment..."})
+                            plot_script = await _generate_plot_script(
+                                confirm, project_dir, preview_mat, dims, bash, project_dir,
+                                prior_script=plot_script,
+                            )
+                            if plot_script:
+                                refined_json, refined_err = await _run_plot_script(plot_script, preview_mat, ch_p, tr_p, bash, project_dir)
+                                if refined_json:
+                                    await on_event({"type": "show_plot", "plot_json": refined_json,
+                                                    "title": f"Refined preview — {preview_mat.stem}"})
+                                else:
+                                    await on_event({"type": "ask_user",
+                                                    "question": f"⚠️ Refined script failed ({refined_err}). Keeping previous layout."})
+                    except asyncio.TimeoutError:
+                        pass  # keep current plot_script
+                else:
+                    await on_event({"type": "ask_user",
+                                    "question": f"⚠️ Plot script failed to run — falling back to default single-channel view.\n\n`{preview_err}`"})
+                    plot_script = None
 
     # Load existing labels
     existing: dict = {}
@@ -78,8 +145,11 @@ async def teach_session(
         ch_idx = int(rng.integers(C))
         tr_idx = int(rng.integers(N))
 
-        # Generate interactive Plotly figure
-        plot_json = await _plot_signal(mat_path, ch_idx, tr_idx, bash, project_dir)
+        # Generate interactive Plotly figure (custom script or default)
+        if plot_script:
+            plot_json, _ = await _run_plot_script(plot_script, mat_path, ch_idx, tr_idx, bash, project_dir)
+        else:
+            plot_json = await _plot_signal(mat_path, ch_idx, tr_idx, bash, project_dir)
         if not plot_json:
             continue
 
@@ -177,6 +247,38 @@ async def _get_dims(mat_path: Path, bash_fn, cwd) -> tuple | None:
     return None
 
 
+async def _run_plot_script(script: str, mat_path: Path, ch_idx: int, tr_idx: int,
+                           bash_fn, cwd) -> tuple[str | None, str | None]:
+    """Run a user-supplied plot script with mat_path/ch_idx/tr_idx pre-defined.
+
+    Returns (plot_json, error_msg). Uses base64 to avoid PowerShell here-string
+    breakage from LLM-generated code containing apostrophes or '@' sequences.
+    """
+    import base64
+    header = "\n".join([
+        "import json",
+        f"mat_path = r'{mat_path}'",
+        f"ch_idx = {ch_idx}",
+        f"tr_idx = {tr_idx}",
+    ])
+    py = header + "\n" + script
+    encoded = base64.b64encode(py.encode("utf-8")).decode("ascii")
+    cmd = (
+        f"python -c \"import base64,pathlib; pathlib.Path('C:/Windows/Temp/custom_plot.py')"
+        f".write_bytes(base64.b64decode('{encoded}'))\"\n"
+        "python C:/Windows/Temp/custom_plot.py"
+    )
+    result = await bash_fn(cmd, cwd=str(cwd))
+    if result.ok and result.stdout.strip():
+        try:
+            json.loads(result.stdout.strip())
+            return result.stdout.strip(), None
+        except Exception as e:
+            return None, f"Script output was not valid JSON: {e}\nstdout: {result.stdout[:300]}"
+    err = getattr(result, "stderr", "") or ""
+    return None, f"Script failed:\n{err[:400]}" if err else "Script produced no output."
+
+
 async def _plot_signal(mat_path: Path, ch_idx: int, tr_idx: int,
                        bash_fn, cwd) -> str | None:
     """Return a Plotly figure as a JSON string, or None on failure."""
@@ -225,3 +327,84 @@ async def _plot_signal(mat_path: Path, ch_idx: int, tr_idx: int,
         except Exception:
             pass
     return None
+
+
+async def _generate_plot_script(
+    description: str,
+    project_dir: Path,
+    sample_mat: Path,
+    dims: tuple | None,
+    bash_fn,
+    cwd,
+    prior_script: str | None = None,
+) -> str | None:
+    """Ask an LLM to write a Plotly plot_script from the user's description."""
+    import re
+    from subagents.base import SubagentConfig, invoke
+    import config as cfg
+
+    # Project summary for dataset context
+    summary = ""
+    summary_path = project_dir / "project_summary.md"
+    if summary_path.exists():
+        summary = summary_path.read_text(encoding="utf-8")[:3000]
+
+    # Read any referenced file path mentioned in description
+    ref_code = ""
+    path_match = re.search(r'[A-Za-z]:[\\\/][^\s\'"*?]+\.(py|m|txt|md)', description)
+    if path_match:
+        ref_path = Path(path_match.group(0))
+        if ref_path.exists():
+            lang = "matlab" if ref_path.suffix == ".m" else "python"
+            note = " (MATLAB — translate the visualization logic to Python/Plotly)" if lang == "matlab" else ""
+            ref_code = (
+                f"\n\nReference file `{ref_path.name}`{note}:\n```{lang}\n"
+                f"{ref_path.read_text(errors='replace')[:5000]}\n```"
+            )
+
+    T, C, N = dims if dims else ("?", "?", "?")
+    prior_section = (
+        f"\n\nPrevious attempt (refine based on feedback):\n```python\n{prior_script}\n```"
+        if prior_script else ""
+    )
+
+    prompt = f"""Write Python code for a signal labelling plot.
+
+## Dataset context
+{summary or "(no summary available)"}
+
+## Sample file
+Path: `{sample_mat}`
+Shape: T={T} timepoints × C={C} channels × N={N} trials
+h5py keys: `epoched_data` (T×C×N), `time` (T,), `new_elect_vals` (C,) — electrode region codes{ref_code}{prior_section}
+
+## Pre-defined variables (do NOT redefine)
+- `mat_path` (str) — path to the current .mat file
+- `ch_idx` (int) — a randomly selected channel index
+- `tr_idx` (int) — a randomly selected trial index
+
+## User's view request
+{description}
+
+## Requirements
+1. Read data with h5py using `mat_path`
+2. Build a Plotly figure dict (`fig`) with keys `data` and `layout`
+3. Dark theme: `paper_bgcolor='#0d1117'`, `plot_bgcolor='#161b22'`, `font=dict(color='#e2e8f0')`
+4. End with exactly: `print(json.dumps(fig))`
+5. Import json at the top
+
+Return ONLY raw Python code — no markdown fences, no explanation."""
+
+    has_ref = bool(ref_code)
+    sc = SubagentConfig(
+        model=cfg.CODE_MODEL,
+        system_prompt="You are a Python code generator. Return only raw Python code with no markdown fences or explanation.",
+        max_tokens=3000 if has_ref else 2000,
+        max_iterations=1,
+    )
+    result = await invoke(sc, [{"role": "user", "content": prompt}])
+    code = result.text.strip()
+    # Strip accidental markdown fences
+    code = re.sub(r'^```\w*\s*', '', code)
+    code = re.sub(r'\s*```$', '', code)
+    return code.strip() or None
