@@ -14,6 +14,9 @@ __pycache__/
 *.pyd
 .Python
 
+# Debug logs
+logs/
+
 # Project data — large files, user-specific
 projects/*/tmp/
 projects/*/sessions/
