@@ -1,8 +1,39 @@
-# AI Data Technician
+# AI Data Technician + EverMemOS
 
-An agentic AI research assistant for exploring, analyzing, and building classification rules on datasets. Built on Claude's tool-use architecture with persistent memory, interactive visualization, and a real-time web interface.
+An agentic AI research assistant for exploring, analyzing, and building classification rules on datasets — powered by Claude's tool-use architecture, **EverMemOS** for persistent semantic memory, interactive visualization, and a real-time web interface.
 
 Designed for researchers working with biomedical signals (EEG, neural time-series) or any structured data who want AI-assisted pattern discovery — without writing boilerplate code.
+
+---
+
+## Why EverMemOS?
+
+AI agents forget everything between sessions. Every new conversation starts from scratch — re-exploring datasets, re-discovering patterns, re-learning your preferences. **EverMemOS** solves this.
+
+EverMemOS is a pluggable memory layer that gives AI agents **persistent, semantically-searchable long-term memory**. In this project it serves as the backbone that makes the AI Data Technician genuinely useful across sessions:
+
+- **Episodic memory** — analytical findings, session summaries, labeling history are automatically extracted and stored. When you come back tomorrow, the AI already knows what it found yesterday.
+- **Profile memory** — user preferences (preferred plot styles, channel selections, analysis approaches) are learned over time. The AI adapts to how *you* work.
+- **Event log** — discrete facts (accuracy numbers, rule strings, file paths) are indexed for fast retrieval. Ask "what accuracy did we get on Rule 3?" and get an instant answer.
+- **Semantic search** — memories are retrieved by meaning, not keyword matching. Ask "what did we learn about the hippocampal channels?" and get relevant results even if those exact words were never used.
+- **Project-scoped** — each project gets its own memory space (via `group_id`), so findings from one dataset don't leak into another.
+- **Cross-project learning** — a global memory layer promotes reusable procedures and insights across all your projects.
+
+### Three Memory Backends
+
+| Backend | Config value | Best for |
+|---------|-------------|----------|
+| **File** (default) | `"file"` | Getting started — stores `project_memory.md` as plain markdown, human-readable and git-trackable |
+| **EverMemOS Local** | `"evermemos_local"` | Full semantic memory — run the [open-source EverMemOS server](https://github.com/nicholasgasior/evermemos) locally via Docker |
+| **EverMemOS Cloud** | `"evermemos_cloud"` | Managed service at `api.evermind.ai` — no infrastructure to maintain |
+
+Switch backends with a single line in `config.py`:
+
+```python
+MEMORY_BACKEND = "evermemos_local"   # or "evermemos_cloud" or "file"
+```
+
+The file backend works out of the box. When you're ready for semantic search, persistent memory across restarts, and automatic knowledge extraction, plug in EverMemOS — the agent code doesn't change at all.
 
 ---
 
@@ -10,7 +41,7 @@ Designed for researchers working with biomedical signals (EEG, neural time-serie
 
 **Two-Agent Architecture** — An Orchestrator agent (Claude Sonnet, extended thinking) plans and delegates, while a Task agent autonomously executes multi-step work (bash, vision, file I/O) in up to 15 iterations. Think like Claude Code, but for data analysis.
 
-**Persistent Project Memory** — Findings, dataset schemas, and classification rules survive across sessions. A `project_memory.md` file per project acts as a living knowledge base that the AI reads and updates automatically.
+**Persistent Memory that Actually Works** — Three-layer memory (session, project, global) with automatic compaction and periodic updates. The file backend gives you git-trackable markdown; EverMemOS gives you semantic search and automatic knowledge extraction. The AI never forgets what it learned about your data.
 
 **Interactive Web UI** — Real-time streaming responses via WebSocket, interactive Plotly charts with zoom/pan/hover, static matplotlib plots for scientific figures, and modal dialogs for signal labeling — all in a dark-themed browser interface.
 
@@ -39,6 +70,7 @@ Designed for researchers working with biomedical signals (EEG, neural time-serie
 - [Pixi](https://pixi.sh) (conda-based package manager)
 - An [Anthropic API key](https://console.anthropic.com/) (Claude)
 - A [Google API key](https://aistudio.google.com/apikey) (Gemini Flash, for vision)
+- *(Optional)* [Docker](https://docker.com) — for running EverMemOS locally
 
 ### Setup
 
@@ -62,6 +94,18 @@ pixi run start -- --project MyProject --start
 # Launch the web UI
 pixi run web
 # Open http://localhost:8000 in your browser
+```
+
+### Enabling EverMemOS
+
+```bash
+# Option A: Local (Docker)
+docker run -p 1995:1995 ghcr.io/nicholasgasior/evermemos:latest
+# Then set MEMORY_BACKEND = "evermemos_local" in config.py
+
+# Option B: Cloud
+# Add to .env: EVERMEM_API_KEY=your-key
+# Then set MEMORY_BACKEND = "evermemos_cloud" in config.py
 ```
 
 ### CLI Options
@@ -105,21 +149,30 @@ User (Browser)
 └──────────────┘
        │
        ▼
-┌──────────────┐
-│   Memory     │  project_memory.md (per-project)
-│   Backend    │  Session JSON (turns, todos, artifacts)
-└──────────────┘
+┌──────────────────────────────────────────────┐
+│              Memory Backend                   │
+│                                               │
+│  ┌─────────┐  ┌───────────────┐  ┌────────┐ │
+│  │  File    │  │ EverMemOS     │  │ Ever-  │ │
+│  │ (markdown│  │ Local (Docker)│  │ MemOS  │ │
+│  │  default)│  │ semantic search│  │ Cloud  │ │
+│  └─────────┘  └───────────────┘  └────────┘ │
+│                                               │
+│  Session JSON ─ project_memory.md ─ global   │
+└──────────────────────────────────────────────┘
 ```
 
 ### Memory Layers
 
-| Layer | Scope | Storage |
-|-------|-------|---------|
-| **Session** | Current conversation | `projects/{name}/sessions/session_{id}.json` |
-| **Project** | Across sessions | `projects/{name}/project_memory.md` |
-| **Global** | Across projects | `projects/_global/global_memory.md` |
+| Layer | Scope | Storage | EverMemOS enhancement |
+|-------|-------|---------|----------------------|
+| **Session** | Current conversation | `sessions/session_{id}.json` | Chat turns auto-extracted into episodic memory |
+| **Project** | Across sessions | `project_memory.md` | Semantic search over all findings, profiles, event logs |
+| **Global** | Across projects | `global_memory.md` | Cross-project pattern recognition and knowledge transfer |
 
 The orchestrator auto-compacts conversation context at ~40k tokens and periodically updates project memory every 5 user messages — so the AI never "forgets" what it learned about your data.
+
+With EverMemOS enabled, memories are automatically categorized (episodic, profile, event), indexed for hybrid retrieval (keyword + semantic), and persisted independently of the markdown files — giving you both human-readable docs and machine-searchable knowledge.
 
 ---
 
@@ -150,8 +203,9 @@ AI_Data_Technician/
 │   ├── optimize_pattern.py   # AI-guided rule refinement
 │   └── apply_rules.py        # Batch classification
 │
-├── memory/
-│   └── backend.py            # Pluggable memory (file-based default)
+├── memory/                   # Pluggable memory backends
+│   ├── backend.py            # Abstract interface + FileMemoryBackend
+│   └── evermemos.py          # EverMemOS client (local + cloud)
 │
 ├── session/
 │   └── session.py            # Turns, todos, artifacts, context carry
@@ -207,6 +261,7 @@ All settings live in [`config.py`](config.py):
 | `ORCHESTRATOR_MODEL` | `claude-sonnet-4-6` | Main orchestrator model |
 | `THINK_MODEL` | `claude-sonnet-4-6` | Reasoning & memory model |
 | `VISION_MODEL` | `gemini-2.5-flash` | Image analysis model |
+| `MEMORY_BACKEND` | `"file"` | Memory backend: `"file"`, `"evermemos_local"`, or `"evermemos_cloud"` |
 | `ORCHESTRATOR_THINKING` | `4000` | Extended thinking token budget |
 | `TASK_MAX_ITER` | `15` | Max tool-use iterations per task |
 | `AUTO_COMPACT_THRESHOLD` | `40000` | Token count triggering compaction |
@@ -220,7 +275,7 @@ All settings live in [`config.py`](config.py):
 
 **Add a workflow** — Create `workflows/myworkflow.py` with an async function, register in `workflows/__init__.py`.
 
-**Swap memory backend** — Implement the `MemoryBackend` interface in `memory/backend.py` and set `MEMORY_BACKEND` in `config.py`.
+**Swap memory backend** — Implement the `MemoryBackend` interface in `memory/backend.py` and set `MEMORY_BACKEND` in `config.py`. See `memory/evermemos.py` for a full reference implementation.
 
 ---
 
