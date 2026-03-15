@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def _load_prompt() -> str:
-    p = Path(__file__).parent / "prompts" / "think.md"
+    p = Path(__file__).parent.parent / "prompts" / "system" / "think.md"
     return p.read_text(encoding="utf-8")
 
 
@@ -25,7 +25,7 @@ async def think(
     """Single-pass Claude call. Returns the response text.
 
     If *memory_backend* is provided, stores the result under *section* in
-    project_summary.md.
+    project_memory.md.
     If *thinking_budget* is None, uses config.THINK_THINKING_BUDGET.
     """
     from agents.runner import SubagentConfig, invoke
@@ -45,7 +45,17 @@ async def think(
     result = await invoke(cfg, [{"role": "user", "content": content}])
     text = result.text.strip()
 
-    if memory_backend and not text.startswith("MODE: no_update"):
+    if section == "__multi__" and memory_backend and not text.startswith("MODE: no_update"):
+        import re
+        parts = re.split(r'^(## .+)$', text, flags=re.MULTILINE)
+        i = 1
+        while i < len(parts) - 1:
+            heading = parts[i].lstrip("# ").strip()
+            body = parts[i + 1].strip()
+            if body:
+                await memory_backend.store(body, {"section": heading})
+            i += 2
+    elif memory_backend and not text.startswith("MODE: no_update"):
         await memory_backend.store(text, {"section": section})
 
     return text

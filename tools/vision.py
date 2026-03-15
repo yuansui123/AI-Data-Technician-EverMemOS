@@ -70,11 +70,11 @@ async def vision(
     # Build prompt
     if multi:
         prompt = (
-            "You are analyzing multiple neural signal plots to compare and contrast them.\n"
+            "You are analyzing multiple images to compare and contrast them.\n"
             "Each image is labeled with a reference name.\n"
             "Return a JSON object with exactly these keys:\n"
             "  description        -- comparative summary of what you see across all images\n"
-            "  similarities       -- what the signals have in common\n"
+            "  similarities       -- what the signal have in common\n"
             "  differences        -- key differences between the signals\n"
             "  likely_patterns    -- object mapping each image name to its most likely pattern (or 'unknown')\n"
             "  rule_assessment    -- if a rule is in context, how well does it classify these signals?\n"
@@ -84,7 +84,7 @@ async def vision(
         )
     else:
         prompt = (
-            "You are analyzing a neural signal plot to help identify patterns.\n"
+            "You are analyzing a signal plot to help identify patterns.\n"
             "Return a JSON object with exactly these keys:\n"
             "  description        -- one-sentence description of what you see\n"
             "  likely_pattern     -- most likely signal pattern name (or 'unknown')\n"

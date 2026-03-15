@@ -80,27 +80,19 @@ async def teach_session(
 
         if view_desc.lower() not in ("default", "skip", ""):
             import numpy as np
-            from agents.codegen import codegen
             rng_preview = np.random.default_rng()
             preview_mat = mat_files[rng_preview.integers(len(mat_files))]
             dims = await _get_dims(preview_mat, bash, project_dir)
             tr_p = int(rng_preview.integers(dims[2])) if dims else 0
             ch_p = int(rng_preview.integers(dims[1])) if dims else 0
 
-            # CodeGen: generate → run → fix loop (shows progress in activity log via on_event)
+            # Task agent: generate plot script via generate → run → fix loop
             _ref = ref_file_path or (_DEFAULT_PLOT_REF if _DEFAULT_PLOT_REF.exists() else None)
-            plot_script = await codegen(
-                description=view_desc,
-                mat_path=preview_mat,
-                ch_idx=ch_p,
-                tr_idx=tr_p,
-                project_dir=project_dir,
-                dims=dims,
+            plot_script = await _generate_plot_script(
+                view_desc, project_dir, preview_mat, dims, bash, str(project_dir),
                 ref_file_path=_ref,
-                on_event=on_event,
             )
             if plot_script:
-                # CodeGen already verified the script runs — read the JSON it produced
                 preview_json, preview_err = await _run_plot_script(
                     plot_script, preview_mat, ch_p, tr_p, bash, project_dir
                 )
@@ -115,17 +107,10 @@ async def teach_session(
                         if confirm == "default":
                             plot_script = None
                         elif confirm != "yes":
-                            # Refine: new CodeGen pass with prior script and user feedback
-                            plot_script = await codegen(
-                                description=confirm,
-                                mat_path=preview_mat,
-                                ch_idx=ch_p,
-                                tr_idx=tr_p,
-                                project_dir=project_dir,
-                                dims=dims,
-                                ref_file_path=_ref,
-                                prior_script=plot_script,
-                                on_event=on_event,
+                            # Refine: new pass with prior script and user feedback
+                            plot_script = await _generate_plot_script(
+                                confirm, project_dir, preview_mat, dims, bash, str(project_dir),
+                                prior_script=plot_script, ref_file_path=_ref,
                             )
                             if plot_script:
                                 refined_json, _ = await _run_plot_script(
@@ -137,16 +122,16 @@ async def teach_session(
                                                     "trial_idx": tr_p})
                                 else:
                                     await on_event({"type": "ask_user",
-                                                    "question": "⚠️ Refined script failed. Keeping previous layout."})
+                                                    "question": "Warning: Refined script failed. Keeping previous layout."})
                     except asyncio.TimeoutError:
                         pass  # keep current plot_script
                 else:
                     await on_event({"type": "ask_user",
-                                    "question": f"⚠️ Plot render failed after generation — falling back to default.\n\n`{preview_err}`"})
+                                    "question": f"Warning: Plot render failed — falling back to default.\n\n`{preview_err}`"})
                     plot_script = None
             else:
                 await on_event({"type": "ask_user",
-                                "question": "⚠️ CodeGen could not produce a working plot script — falling back to default single-channel view."})
+                                "question": "Warning: Could not produce a working plot script — falling back to default single-channel view."})
 
     # Load existing labels
     existing: dict = {}
@@ -402,12 +387,10 @@ async def _generate_plot_script(
 ) -> str | None:
     """Ask an LLM to write a Plotly plot_script from the user's description."""
     import re
-    from agents.runner import SubagentConfig, invoke
-    import config as cfg
 
     # Project summary for dataset context
     summary = ""
-    summary_path = project_dir / "project_summary.md"
+    summary_path = project_dir / "project_memory.md"
     if summary_path.exists():
         summary = summary_path.read_text(encoding="utf-8")[:3000]
 
@@ -435,43 +418,19 @@ async def _generate_plot_script(
         if prior_script else ""
     )
 
-    prompt = f"""Write Python code for a signal labelling plot.
-
-## Dataset context
-{summary or "(no summary available)"}
-
-## Sample file
-Path: `{sample_mat}`
-Shape: T={T} timepoints × C={C} channels × N={N} trials
-h5py keys: `epoched_data` (T×C×N), `time` (T,), `new_elect_vals` (C,) — electrode region codes{ref_code}{prior_section}
-
-## Pre-defined variables (do NOT redefine)
-- `mat_path` (str) — path to the current .mat file
-- `ch_idx` (int) — a randomly selected channel index
-- `tr_idx` (int) — a randomly selected trial index
-
-## User's view request
-{description}
-
-## Requirements
-1. Read data with h5py using `mat_path`
-2. Build a Plotly figure dict (`fig`) with keys `data` and `layout`
-3. Dark theme: `paper_bgcolor='#0d1117'`, `plot_bgcolor='#161b22'`, `font=dict(color='#e2e8f0')`
-4. End with exactly: `print(json.dumps(fig))`
-5. Import json at the top
-6. Keep the script self-contained and complete — do not truncate
-
-Return ONLY raw Python code — no markdown fences, no explanation."""
-
-    has_ref = bool(ref_code)
-    sc = SubagentConfig(
-        model=cfg.CODE_MODEL,
-        system_prompt="You are a Python code generator. Return only raw Python code with no markdown fences or explanation.",
-        max_tokens=4000 if has_ref else 2500,
-        max_iterations=1,
+    template = (Path(__file__).parent.parent / "prompts" / "templates" / "teach_codegen.md").read_text(encoding="utf-8")
+    prompt = template.format(
+        summary=summary or "(no summary available)",
+        sample_mat=sample_mat,
+        T=T, C=C, N=N,
+        ref_code=ref_code,
+        prior_section=prior_section,
+        description=description,
     )
-    result = await invoke(sc, [{"role": "user", "content": prompt}])
-    code = result.text.strip()
+
+    from agents.think import think as think_call
+    code_result = await think_call(content=prompt, thinking_budget=0)
+    code = code_result.strip()
     # Strip accidental markdown fences
     code = re.sub(r'^```\w*\s*', '', code)
     code = re.sub(r'\s*```$', '', code)

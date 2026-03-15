@@ -1,12 +1,13 @@
 """Workflow: review_results
 
 Sequence:
-  1. Statistics: compute current classification metrics for all saved rules
+  1. Task agent: compute current classification metrics for all saved rules
   2. Vision: inspect the worst FP/FN plots
-  3. Think: produce a structured review → project_summary.md §Review
+  3. Think: produce a structured review → project_memory.md §Review
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -20,25 +21,34 @@ async def review_results(
 
     Returns {metrics_by_pattern, fp_examples, fn_examples, review_text}.
     """
-    from agents.statistics import statistics
+    from agents.task import task
     from tools.vision import vision
     from agents.think import think
 
     project_dir = Path(project_dir)
-    carry = dict(context_carry or {})
+    feature_matrix_path = str(project_dir / "cache" / "feature_matrix.parquet")
 
-    # Step 1 — Statistics: evaluate saved rules
-    eval_result = await statistics(
-        task=(
-            f"Evaluate all saved rules for pattern '{pattern or 'all patterns'}'. "
-            f"Return per-pattern metrics and list FP/FN signal IDs."
-        ),
-        pattern=pattern,
-        feature_matrix_path=str(project_dir / "cache" / "feature_matrix.parquet"),
-        project_dir=project_dir,
-        context_carry=carry,
+    # Step 1 — Task agent: evaluate saved rules
+    task_desc = (
+        f"Evaluate all saved rules for pattern '{pattern or 'all patterns'}'.\n"
+        f"Feature matrix: {feature_matrix_path}\n"
+        f"Project directory: {project_dir}\n\n"
+        "Return per-pattern metrics (accuracy, F1, sensitivity, specificity) "
+        "and list FP and FN signal IDs.\n\n"
+        "Return a JSON object with keys: best_rule, fitness, fp_signals, fn_signals, metrics."
     )
-    carry.update({k: v for k, v in eval_result.items() if k != "_meta"})
+    result_text = await task(task_description=task_desc, project_dir=project_dir)
+
+    # Parse eval result
+    text = result_text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        eval_result = json.loads(text)
+    except json.JSONDecodeError:
+        eval_result = {"raw": result_text, "fp_signals": [], "fn_signals": []}
 
     # Step 2 — Vision: inspect worst misclassified signals (up to 4)
     vision_notes: list[dict] = []

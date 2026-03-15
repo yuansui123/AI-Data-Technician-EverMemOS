@@ -5,7 +5,7 @@ a predictions CSV to projects/{Name}/cache/predictions.csv.
 
 Sequence:
   1. Bash: load feature matrix + rules → apply → write predictions.csv
-  2. Think: store prediction stats to project_summary.md §Applied Rules
+  2. Think: store prediction stats to project_memory.md §Applied Rules
 """
 from __future__ import annotations
 

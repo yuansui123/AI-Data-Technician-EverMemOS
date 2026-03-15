@@ -1,9 +1,4 @@
-from workflows.explore_dataset import explore_dataset
-from workflows.ingest_documents import ingest_documents
-from workflows.optimize_pattern import optimize_pattern
-from workflows.teach_session import teach_session
-from workflows.review_results import review_results
-from workflows.apply_rules import apply_rules
+"""Workflows — lazy-imported to avoid pulling in v4cedars deps at startup."""
 
 __all__ = [
     "explore_dataset",
@@ -13,3 +8,20 @@ __all__ = [
     "review_results",
     "apply_rules",
 ]
+
+_MODULES = {
+    "explore_dataset": "workflows.explore_dataset",
+    "ingest_documents": "workflows.ingest_documents",
+    "optimize_pattern": "workflows.optimize_pattern",
+    "teach_session": "workflows.teach_session",
+    "review_results": "workflows.review_results",
+    "apply_rules": "workflows.apply_rules",
+}
+
+
+def __getattr__(name: str):
+    if name in _MODULES:
+        from importlib import import_module
+        mod = import_module(_MODULES[name])
+        return getattr(mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

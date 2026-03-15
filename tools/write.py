@@ -19,7 +19,7 @@ def write(
     # Safety: if project_dir given, refuse writes outside it
     if project_dir is not None:
         project_dir = Path(project_dir).resolve()
-        if not str(path).startswith(str(project_dir)):
+        if not path.is_relative_to(project_dir):
             return {"response": f"Refused: path {path} is outside project directory {project_dir}"}
 
     try:

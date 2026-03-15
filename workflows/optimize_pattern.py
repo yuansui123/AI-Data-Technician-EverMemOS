@@ -1,20 +1,34 @@
 """Workflow: optimize_pattern
 
 Sequence:
-  1. Statistics: compute features + baseline rule evaluation
+  1. Task agent: compute features + baseline rule evaluation
   2. Loop (up to N_ROUNDS):
-     a. Statistics: LASR optimization → candidate rules + FP/FN signals
+     a. Task agent: LASR optimization → candidate rules + FP/FN signals
      b. If plateau: Vision × FN signals → suggested_feature_gap
-     c. If feature_gap: Code → new feature draft → Bash → recompute features
-     d. Think: update project_summary.md after each round
-  3. Statistics: final evaluation of best rule
-  4. Think: store final rule + metrics to project_summary.md
+     c. If feature_gap: Task agent → new feature draft → Bash → recompute features
+     d. Think: update project_memory.md after each round
+  3. Task agent: final evaluation of best rule
+  4. Think: store final rule + metrics to project_memory.md
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 N_ROUNDS = 5
+
+
+def _parse_task_json(text: str) -> dict:
+    """Parse JSON from task agent response, tolerating markdown fences."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"raw": text, "parse_error": True}
 
 
 async def optimize_pattern(
@@ -27,10 +41,9 @@ async def optimize_pattern(
 
     Returns {best_rule, fitness, metrics, rounds_run, feature_gaps_found}.
     """
-    from agents.statistics import statistics
+    from agents.task import task
     from agents.think import think
     from tools.vision import vision
-    from agents.code import code
     from tools.bash import bash
     import config
 
@@ -38,38 +51,43 @@ async def optimize_pattern(
     cache_dir = project_dir / "cache"
     feature_matrix_path = str(cache_dir / "feature_matrix.parquet")
 
-    carry = dict(context_carry or {})
-    best_rule: str = carry.get("best_rule", "")
+    best_rule: str = (context_carry or {}).get("best_rule", "")
     best_fitness: float = 0.0
     rounds_run = 0
     feature_gaps: list[str] = []
 
     # Step 1 — baseline
-    baseline = await statistics(
-        task=f"Compute feature matrix for pattern '{pattern_name}' and evaluate current best rule if any.",
-        pattern=pattern_name,
-        feature_matrix_path=feature_matrix_path,
+    baseline_text = await task(
+        task_description=(
+            f"Compute feature matrix for pattern '{pattern_name}' and evaluate "
+            f"current best rule if any.\n"
+            f"Feature matrix path: {feature_matrix_path}\n"
+            f"Project directory: {project_dir}\n\n"
+            "Return JSON with keys: best_rule, fitness, fp_signals, fn_signals."
+        ),
         project_dir=project_dir,
-        context_carry=carry,
     )
-    carry.update({k: v for k, v in baseline.items() if k != "_meta"})
+    baseline = _parse_task_json(baseline_text)
 
     # Step 2 — optimization loop
     for round_i in range(1, N_ROUNDS + 1):
         rounds_run = round_i
 
-        opt_result = await statistics(
-            task=(
-                f"Run LASR optimization for pattern '{pattern_name}'. "
-                f"Current best rule: {carry.get('best_rule', 'none')}. "
-                f"Identify FP and FN signals."
+        opt_text = await task(
+            task_description=(
+                f"Run LASR optimization for pattern '{pattern_name}'.\n"
+                f"Feature matrix path: {feature_matrix_path}\n"
+                f"Project directory: {project_dir}\n"
+                f"Current best rule: {best_rule or 'none'}\n"
+                f"Current best fitness: {best_fitness}\n\n"
+                "Identify FP and FN signals. Set plateau=true if fitness "
+                "has not improved over 3 iterations.\n\n"
+                "Return JSON with keys: best_rule, fitness, fp_signals, fn_signals, "
+                "plateau, is_terminal."
             ),
-            pattern=pattern_name,
-            feature_matrix_path=feature_matrix_path,
             project_dir=project_dir,
-            context_carry=carry,
         )
-        carry.update({k: v for k, v in opt_result.items() if k != "_meta"})
+        opt_result = _parse_task_json(opt_text)
 
         new_fitness = float(opt_result.get("fitness", 0.0))
         if new_fitness > best_fitness:
@@ -79,10 +97,10 @@ async def optimize_pattern(
         # plateau → Vision on FN signals
         if opt_result.get("plateau"):
             fn_signals: list[str] = opt_result.get("fn_signals", [])
-            feature_gap = await _vision_gap(fn_signals, pattern_name, carry, project_dir)
+            feature_gap = await _vision_gap(fn_signals, pattern_name, best_rule, project_dir)
             if feature_gap and feature_gap != "none":
                 feature_gaps.append(feature_gap)
-                # Code → new feature
+                # Task agent → new feature
                 await _synthesize_feature(feature_gap, project_dir, config.V4CEDARS_LIB)
                 # Recompute feature matrix
                 await bash(
@@ -91,7 +109,6 @@ async def optimize_pattern(
                     f'FeatureStore(r\"{project_dir}\").recompute(force=True)"',
                     cwd=str(project_dir),
                 )
-                carry["new_feature"] = feature_gap
 
         # Think: milestone update
         if memory_backend:
@@ -105,13 +122,16 @@ async def optimize_pattern(
             break
 
     # Final evaluation
-    final = await statistics(
-        task=f"Final evaluation of best rule '{best_rule}' for pattern '{pattern_name}'.",
-        pattern=pattern_name,
-        feature_matrix_path=feature_matrix_path,
+    final_text = await task(
+        task_description=(
+            f"Final evaluation of best rule '{best_rule}' for pattern '{pattern_name}'.\n"
+            f"Feature matrix path: {feature_matrix_path}\n"
+            f"Project directory: {project_dir}\n\n"
+            "Return JSON with keys: best_rule, fitness, metrics."
+        ),
         project_dir=project_dir,
-        context_carry=carry,
     )
+    final = _parse_task_json(final_text)
 
     if memory_backend:
         await think(
@@ -132,7 +152,7 @@ async def optimize_pattern(
 async def _vision_gap(
     fn_signals: list[str],
     pattern_name: str,
-    carry: dict,
+    current_rule: str,
     project_dir: Path,
 ) -> str:
     """Run Vision on FN signal plots and aggregate suggested feature gaps."""
@@ -150,7 +170,7 @@ async def _vision_gap(
             context={
                 "signal_id": sig_id,
                 "pattern": pattern_name,
-                "current_rule": carry.get("best_rule", ""),
+                "current_rule": current_rule,
             },
         )
         gap = result.get("suggested_feature_gap", "none")
@@ -169,12 +189,27 @@ async def _synthesize_feature(
     project_dir: Path,
     v4cedars_lib: str,
 ) -> None:
-    """Use the Code primitive to draft a new feature and move it to v4cedars lib."""
-    from agents.code import code
+    """Use the Task agent to draft a new feature and write it to v4cedars lib."""
+    from agents.task import task
 
     output_dir = Path(v4cedars_lib) / "features" / "derived"
-    await code(
-        feature_gap_description=feature_gap,
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    await task(
+        task_description=(
+            f"Write a Python feature extraction function for: {feature_gap}\n\n"
+            f"Use the v4cedars @feature decorator pattern:\n"
+            "```python\n"
+            "import numpy as np\n"
+            "from features import feature\n\n"
+            '@feature(name="my_feature", category="spectral")\n'
+            "def my_feature(signal: np.ndarray, fs: float, **kwargs) -> float:\n"
+            '    """One-sentence description."""\n'
+            "    return float(result)\n"
+            "```\n\n"
+            f"Write the file to: {output_dir}\n"
+            "Use only numpy, scipy, antropy, mne — no new pip installs.\n"
+            "Handle edge cases (empty signal, NaN) → return np.nan."
+        ),
         project_dir=project_dir,
-        output_dir=output_dir,
     )

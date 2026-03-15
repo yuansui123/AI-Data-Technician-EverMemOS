@@ -1,6 +1,6 @@
 """Memory abstraction layer.
 
-Default: FileMemoryBackend — reads/writes project_summary.md.
+Default: FileMemoryBackend — reads/writes project_memory.md.
 Future:  EverMemOSBackend   — swap via MEMORY_BACKEND in config.py.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ class MemoryBackend(ABC):
         """Persist a chunk of content (e.g. a milestone insight).
 
         metadata keys used by FileMemoryBackend:
-            section (str): heading under which to write in project_summary.md
+            section (str): heading under which to write in project_memory.md
         """
 
     @abstractmethod
@@ -33,14 +33,14 @@ class MemoryBackend(ABC):
 
 
 class FileMemoryBackend(MemoryBackend):
-    """Reads and writes project_summary.md inside a project directory.
+    """Reads and writes project_memory.md inside a project directory.
 
-    project_summary.md is a plain markdown file maintained by the Think agent
+    project_memory.md is a plain markdown file maintained by the Think agent
     after every major milestone. It is human-readable and git-trackable.
     """
 
     def __init__(self, project_dir: str | Path):
-        self.summary_path = Path(project_dir) / "project_summary.md"
+        self.summary_path = Path(project_dir) / "project_memory.md"
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -78,6 +78,29 @@ class FileMemoryBackend(MemoryBackend):
         # No vector search — return full summary.
         # EverMemOSBackend will override this with semantic retrieval.
         return self._read()
+
+
+class GlobalFileMemoryBackend(FileMemoryBackend):
+    """File-based global memory at projects/_global/global_memory.md."""
+
+    def __init__(self):
+        import config
+        global_dir = Path(config.PROJECTS_DIR) / "_global"
+        global_dir.mkdir(parents=True, exist_ok=True)
+        self.summary_path = global_dir / "global_memory.md"
+
+
+def get_global_backend() -> MemoryBackend:
+    """Factory for the global (cross-project) memory backend."""
+    import config
+    if config.MEMORY_BACKEND == "file":
+        return GlobalFileMemoryBackend()
+    if config.MEMORY_BACKEND.startswith("evermemos"):
+        from memory.evermemos import EverMemOSBackend
+        backend = EverMemOSBackend(Path(config.PROJECTS_DIR) / "_global")
+        backend.group_id = "adt_global"
+        return backend
+    raise ValueError(f"Unknown MEMORY_BACKEND: {config.MEMORY_BACKEND!r}")
 
 
 def get_memory_backend(project_dir: str | Path) -> MemoryBackend:

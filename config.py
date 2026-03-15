@@ -10,27 +10,20 @@ _HERE = Path(__file__).resolve().parent
 # ── Model IDs ──────────────────────────────────────────────────────────────────
 ORCHESTRATOR_MODEL = "claude-sonnet-4-6"
 THINK_MODEL        = "claude-sonnet-4-6"
-EXPLORE_MODEL      = "claude-sonnet-4-6"
-STATISTICS_MODEL   = "claude-sonnet-4-6"
-CODE_MODEL         = "claude-sonnet-4-6"
+TASK_MODEL         = "claude-sonnet-4-6"
 VISION_MODEL       = "gemini-2.5-flash"
 
 # ── Token budgets (extended thinking) ─────────────────────────────────────────
-ORCHESTRATOR_THINKING_BUDGET =  0      # disabled for now
-THINK_THINKING_BUDGET        =  0      # disabled for now
-EXPLORE_THINKING_BUDGET      =  0      # disabled for now
-STATISTICS_THINKING_BUDGET   =  0      # disabled for now
+ORCHESTRATOR_THINKING_BUDGET = 4000    # reason before choosing tools/agents
+THINK_THINKING_BUDGET        = 3000    # deep reasoning for summaries, compaction, LASR
 
 # ── Iteration / tool-use limits ───────────────────────────────────────────────
 ORCHESTRATOR_LIMITS = {"simple": 5, "moderate": 10, "complex": 25}
-EXPLORE_MAX_ITER    = 10
-STATISTICS_MAX_ITER = 7
-CODE_MAX_TOOL_USES  = 3
-CODEGEN_MAX_ITER    = 8   # bash/read exploration + generate → run → fix loop
-CODEGEN_THINKING_BUDGET = 2000  # per-iteration thinking for planning before tool calls
+TASK_MAX_ITER       = 15
 
 # ── Context management ────────────────────────────────────────────────────────
 AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction
+MEMORY_UPDATE_INTERVAL = 15       # turns between periodic Think memory updates
 
 # ── Memory backend ────────────────────────────────────────────────────────────
 MEMORY_BACKEND = "file"           # "file" | "evermemos_local" | "evermemos_cloud"

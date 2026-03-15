@@ -2,9 +2,6 @@
 
 All LLM calls go through invoke(). Single-pass agents use max_iterations=1.
 Multi-pass agents use max_iterations>1 with a ToolExecutor.
-
-run_agent() is the high-level interface for spawning a fresh agent with
-a prompt, tools, and iteration limit.
 """
 from __future__ import annotations
 
@@ -116,13 +113,13 @@ EventCallback = Callable[[dict], Awaitable[None]] | None
 async def invoke(
     config: SubagentConfig,
     messages: list[dict],
-    tool_executor: ToolExecutor | None = None,
+    tool_executor: Any | None = None,  # ToolExecutor or any object with .execute(name, input) -> str
     on_event: EventCallback = None,
 ) -> SubagentResult:
     """Call the LLM with a tool-use loop up to config.max_iterations.
 
     For single-pass agents (think) use max_iterations=1.
-    For tool-use agents (explore, statistics) pass a ToolExecutor.
+    For tool-use agents pass a ToolExecutor (or duck-typed equivalent).
     """
     import asyncio
     import anthropic
@@ -290,72 +287,6 @@ async def invoke(
     )
     _debug_log_result(config, result)
     return result
-
-
-# -- run_agent: high-level agent spawner ------------------------------------
-
-async def run_agent(
-    message: str,
-    prompt: str,
-    tools: list[dict] | None = None,
-    max_iterations: int = 1,
-    thinking_budget: int = 0,
-    max_tokens: int = 4096,
-    model: str | None = None,
-    project_dir: str | Path | None = None,
-    on_event: EventCallback = None,
-    agent_name: str | None = None,
-) -> SubagentResult:
-    """Spawn a fresh agent with the given configuration.
-
-    Args:
-        message: The task/user message to send.
-        prompt: Either a prompt filename (loads agents/prompts/{prompt}.md)
-                or raw prompt text if the file doesn't exist.
-        tools: Anthropic tool schemas. None = no tools (single-pass).
-        max_iterations: 1 = single-pass, >1 = tool-use loop.
-        thinking_budget: Extended thinking token budget. 0 = disabled.
-        max_tokens: Max response tokens.
-        model: Model ID override. Defaults to config.ORCHESTRATOR_MODEL.
-        project_dir: Working directory for tool execution.
-        on_event: Callback for streaming events.
-        agent_name: Label for sub-events (e.g. "explore", "statistics").
-    """
-    import config as cfg
-
-    # Load prompt from file or use raw text
-    prompt_file = Path(__file__).parent / "prompts" / f"{prompt}.md"
-    if prompt_file.exists():
-        system_prompt = prompt_file.read_text(encoding="utf-8")
-    else:
-        system_prompt = prompt
-
-    agent_config = SubagentConfig(
-        model=model or cfg.ORCHESTRATOR_MODEL,
-        system_prompt=system_prompt,
-        tools=tools or [],
-        thinking_budget=thinking_budget,
-        max_iterations=max_iterations,
-        max_tokens=max_tokens,
-    )
-
-    executor = ToolExecutor(project_dir=str(project_dir) if project_dir else None) if tools else None
-
-    # Wrap on_event to label sub-agent events
-    sub_on_event = None
-    if on_event and agent_name:
-        async def sub_on_event(event: dict):
-            if event["type"] == "tool_call":
-                await on_event({"type": "sub_tool_call", "subagent": agent_name,
-                                "tool": event["tool"], "input": event["input"]})
-            elif event["type"] == "tool_result":
-                await on_event({"type": "sub_tool_result", "subagent": agent_name,
-                                "tool": event["tool"], "result": event["result"]})
-    elif on_event:
-        sub_on_event = on_event
-
-    return await invoke(agent_config, [{"role": "user", "content": message}],
-                        tool_executor=executor, on_event=sub_on_event)
 
 
 # -- Debug logging helpers ---------------------------------------------------

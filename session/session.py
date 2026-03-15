@@ -29,6 +29,7 @@ class Session:
         self.turns: list[dict[str, str]] = []
         self.todos: list[dict[str, Any]] = []   # structured task list with evidence
         self.context_carry: dict[str, Any] = {}  # small fact-passing dict between steps
+        self.last_memory_turn: int = 0           # turn count at last periodic memory update
 
     # ── turn management ───────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ class Session:
             "session_id": self.session_id,
             "turns": self.turns,
             "context_carry": self.context_carry,
+            "last_memory_turn": self.last_memory_turn,
         }
         self._session_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -82,6 +84,7 @@ class Session:
         session = cls(project_dir, session_id)
         session.turns = data["turns"]
         session.context_carry = data.get("context_carry", {})
+        session.last_memory_turn = data.get("last_memory_turn", 0)
 
         todos_file = project_path / "tmp" / f"session_{session_id}" / "todos.json"
         if todos_file.exists():

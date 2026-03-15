@@ -1,16 +1,17 @@
-"""Agents — all LLM invocations (single-pass and multi-pass)."""
+"""Agents — two agent types: think (single-pass) and task (multi-turn tool loop)."""
 
 from agents.runner import (
     SubagentConfig,
     SubagentResult,
     ToolExecutor,
     invoke,
-    run_agent,
 )
 from agents.think import think, compact_turns
+from agents.task import task
 
 __all__ = [
     "SubagentConfig", "SubagentResult", "ToolExecutor",
-    "invoke", "run_agent",
+    "invoke",
     "think", "compact_turns",
+    "task",
 ]

@@ -1,6 +1,6 @@
 """Web interface — FastAPI app with WebSocket for real-time event streaming.
 
-Run via:  python main.py --web
+Run via:  python main.py
 Opens at: http://localhost:8000
 """
 from __future__ import annotations
@@ -83,6 +83,7 @@ async def serve_file(path: str):
     allowed_roots = [
         Path(config.PROJECTS_DIR).resolve(),
         Path(tempfile.gettempdir()).resolve(),
+        Path(r"C:\Windows\Temp").resolve(),   # scripts often write here on Windows
     ]
     if not any(_is_under(full_path, root) for root in allowed_roots):
         raise HTTPException(status_code=403, detail="Access denied")
@@ -646,35 +647,20 @@ function handleEvent(ev) {
   } else if (ev.type === 'tool_call') {
     clearThinkingEntry();
     // Update todo panel live when orchestrator writes todos
-    if (ev.tool === 'todo_write' && ev.input && ev.input.todos) {
+    if (ev.tool === 'todo' && ev.input && ev.input.todos) {
       updateTodoPanel(ev.input.todos);
     }
-    const imgP = ev.tool === 'vision_analyze' ? (ev.input && ev.input.image_path) : null;
+    const imgP = ev.tool === 'vision' ? (ev.input && ev.input.image_path) : null;
     logActivity('tool_call', ev.tool, formatInput(ev.tool, ev.input), imgP);
     setStatus('thinking', `Running ${ev.tool}...`);
-    // Also show analyzed image inline in the main chat
-    if (imgP) {
-      const imgDiv = document.createElement('div');
-      imgDiv.className = 'msg assistant';
-      imgDiv.innerHTML = plotImgHtml(imgP);
-      document.getElementById('messages').appendChild(imgDiv);
-      document.getElementById('messages').scrollTop = 99999;
-    }
 
   } else if (ev.type === 'tool_result') {
     logActivity('tool_result', ev.tool, formatResult(ev.tool, ev.result || ''));
 
   } else if (ev.type === 'sub_tool_call') {
     // Intermediate step inside a subagent (e.g. explore's bash calls)
-    const imgP2 = ev.tool === 'vision_analyze' ? (ev.input && ev.input.image_path) : null;
+    const imgP2 = ev.tool === 'vision' ? (ev.input && ev.input.image_path) : null;
     logSubActivity('sub_call', ev.subagent, ev.tool, formatInput(ev.tool, ev.input), imgP2);
-    if (imgP2) {
-      const imgDiv = document.createElement('div');
-      imgDiv.className = 'msg assistant';
-      imgDiv.innerHTML = plotImgHtml(imgP2);
-      document.getElementById('messages').appendChild(imgDiv);
-      document.getElementById('messages').scrollTop = 99999;
-    }
 
   } else if (ev.type === 'sub_tool_result') {
     logSubActivity('sub_result', ev.subagent, ev.tool, formatResult(ev.tool, ev.result || ''));
@@ -1112,25 +1098,20 @@ function showLabelModal(ev) {
 // ── Formatting helpers ─────────────────────────────────────────────────────────
 function formatInput(tool, inp) {
   if (!inp) return '';
-  if (tool === 'todo_write') {
+  if (tool === 'todo') {
     const todos = inp.todos || [];
     return todos.map(t => {
       const icon = t.status === 'done' ? '✓' : t.status === 'running' ? '▶' : t.status === 'failed' ? '✗' : '○';
       return `${icon} ${t.title || t.id}`;
     }).join('\\n') || '(empty list)';
   }
-  if (tool === 'bash' || tool === 'bash_execute') return inp.command || '';
-  if (tool === 'explore_dataset') return inp.data_dir || '';
-  if (tool === 'explore') return (inp.task || '') + (inp.data_dir ? `\\n@ ${inp.data_dir}` : '');
-  if (tool === 'statistics') return inp.task || '';
-  if (tool === 'ask_user') return inp.question || '';
-  if (tool === 'vision_analyze') return (inp.image_path || '').split(/[\\/]/).pop();
-  if (tool === 'optimize_pattern' || tool === 'teach_session' || tool === 'review_results' || tool === 'apply_rules')
-    return inp.pattern ? `pattern: ${inp.pattern}` : '';
-  if (tool === 'ingest_documents') {
-    const files = inp.file_paths || [];
-    return files.length ? files.map(f => f.split(/[\\/]/).pop()).join(', ') : inp.data_dir || '';
-  }
+  if (tool === 'bash') return inp.command || '';
+  if (tool === 'ask') return inp.question || '';
+  if (tool === 'vision') return (inp.image_path || '').split(/[\\/]/).pop();
+  if (tool === 'read') return (inp.path || '').split(/[\\/]/).pop();
+  if (tool === 'write') return (inp.path || '').split(/[\\/]/).pop();
+  if (tool === 'plot') return inp.title || '';
+  if (tool === 'task') return (inp.task || '').slice(0, 80);
   return Object.entries(inp).map(([k,v]) => {
     const s = String(v);
     return `${k}: ${s.length > 60 ? s.slice(0,57)+'...' : s}`;
@@ -1141,21 +1122,17 @@ function formatResult(tool, result) {
   if (!result) return '';
   let parsed = null;
   try { parsed = JSON.parse(result); } catch(e) {}
-  if (tool === 'todo_write') {
+  if (tool === 'todo') {
     if (parsed && parsed.error) return '✗ ' + parsed.error.slice(0, 120);
     if (parsed && parsed.todos_saved) return `Saved ${parsed.count} todos`;
     return result.slice(0, 100);
   }
-  if (tool === 'bash' || tool === 'bash_execute') {
+  if (tool === 'bash') {
     const out = parsed && parsed.stdout ? parsed.stdout : result;
     const lines = out.trim().split('\\n').filter(l => l.trim());
     return lines.slice(0, 3).join('\\n') + (lines.length > 3 ? `\\n… (${lines.length} lines)` : '');
   }
-  if (tool === 'explore_dataset' || tool === 'statistics' || tool === 'explore') {
-    const lines = result.split('\\n').filter(l => l.trim() && !l.startsWith('#'));
-    return lines.slice(0, 3).join('\\n');
-  }
-  if (tool === 'vision_analyze') {
+  if (tool === 'vision') {
     const desc = parsed && parsed.description ? parsed.description : result;
     return String(desc).slice(0, 120);
   }
@@ -1419,6 +1396,8 @@ async def index():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
+    session = None
+    project_dir = None
     try:
         import traceback
         from pathlib import Path
@@ -1529,7 +1508,22 @@ async def websocket_endpoint(ws: WebSocket):
                     err = "Anthropic API returned a transient 500 error — just retry your message."
                 else:
                     err = f"Error: {type(exc).__name__}: {msg_str[:200]}"
+                session.append(user_input, f"[error] {err}")
+                session.save()
                 await ws.send_text(json.dumps({"type": "error", "message": err}))
 
     except WebSocketDisconnect:
+        # End-of-session reflection: update L2 project memory + promote to L3 global
+        if session is not None and project_dir is not None:
+            try:
+                from orchestrator.reflection import end_of_session_reflection
+                from memory.backend import get_memory_backend, get_global_backend
+                await end_of_session_reflection(
+                    session,
+                    get_memory_backend(project_dir),
+                    get_global_backend(),
+                )
+                session.save()
+            except Exception:
+                pass  # don't crash on reflection failure
         manager.disconnect(ws)

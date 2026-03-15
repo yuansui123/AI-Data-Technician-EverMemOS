@@ -17,154 +17,38 @@ if TYPE_CHECKING:
 
 
 # ── Orchestrator tool definitions ──────────────────────────────────────────────
-# Tools import their schemas from tools/; workflow/agent schemas are inline.
+# Tools import their schemas from tools/; agent schemas are inline.
 
 from tools import TOOL_SCHEMAS
-
-# Workflow schemas (no tool file — they dispatch to workflows/)
-_WORKFLOW_SCHEMAS = [
-    {
-        "name": "explore_dataset",
-        "description": "Explore a dataset directory: list files, profile signals, compute basic statistics. Use when user provides a data path.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "data_dir": {"type": "string", "description": "Absolute path to dataset folder or file"}
-            },
-            "required": ["data_dir"],
-        },
-    },
-    {
-        "name": "ingest_documents",
-        "description": (
-            "Read PDFs or text documents and synthesise their content into project_memory.md "
-            "via the Think agent. Use for research papers, protocol descriptions, README files. "
-            "NOT for .mat, .m, .py, or binary data files — use read for those."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of absolute file paths to ingest",
-                },
-                "data_dir": {"type": "string", "description": "Optional: directory to scan for files"},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "optimize_pattern",
-        "description": "Run LASR optimization loop to find the best rule for a signal pattern.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string", "description": "Name of the signal pattern to optimize"}
-            },
-            "required": ["pattern"],
-        },
-    },
-    {
-        "name": "teach_session",
-        "description": (
-            "Interactive labelling session — shows signals one-by-one as popup modals "
-            "with label buttons. Requires data_dir. "
-            "ALWAYS use this when user wants to label, teach, or annotate signals. "
-            "NEVER launch external GUI scripts — pass any style reference as view_description instead."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "data_dir": {"type": "string", "description": "Path to data directory or specific .mat file"},
-                "pattern": {"type": "string", "description": "Optional: pattern name to label for (e.g. 'artifact')"},
-                "n_signals": {"type": "integer", "description": "How many signals to label in this session (default 10)"},
-                "view_description": {
-                    "type": "string",
-                    "description": (
-                        "Optional: free-text description of how signals should be displayed, "
-                        "e.g. 'all channels stacked with 1000-unit offset', 'MTL channels only'. "
-                        "If omitted the workflow will ask the user."
-                    ),
-                },
-                "ref_file_path": {
-                    "type": "string",
-                    "description": (
-                        "Optional: absolute path to a reference script (.py or .m) the user wants "
-                        "the display to mimic. Pass this whenever the user says 'similar to <path>'. "
-                        "Pass the raw file path here — do NOT embed it inside view_description."
-                    ),
-                },
-                "plot_script": {
-                    "type": "string",
-                    "description": (
-                        "Optional pre-built Python code for rendering each signal. "
-                        "Variables `mat_path`, `ch_idx`, `tr_idx` are pre-defined. "
-                        "Must end with `print(json.dumps(fig))`. "
-                        "Leave unset — let view_description generate this automatically."
-                    ),
-                },
-            },
-            "required": ["data_dir"],
-        },
-    },
-    {
-        "name": "review_results",
-        "description": "Review classification results and collect user feedback.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string", "description": "Optional: pattern to review"}
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "apply_rules",
-        "description": "Apply current rules to all signals and write label outputs.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string", "description": "Optional: pattern to apply rules for"}
-            },
-            "required": [],
-        },
-    },
-]
 
 # Agent schemas (LLM reasoning loops available to orchestrator)
 _AGENT_SCHEMAS = [
     {
-        "name": "statistics",
-        "description": "Run quantitative analysis: feature distributions, group comparisons, correlation, model fitting.",
+        "name": "task",
+        "description": (
+            "Spawn a tool-use subagent for multi-step work. The agent gets a fresh context "
+            "with bash, vision, read, and write tools. Write a detailed task description "
+            "including ALL context the agent needs (file paths, data format, what to look for, "
+            "constraints). Use for: data exploration, statistical analysis, code generation, "
+            "evaluation, any multi-step investigation or modification."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "task": {"type": "string", "description": "What statistical analysis to run"},
-                "pattern": {"type": "string", "description": "Optional: signal pattern context"},
+                "task": {
+                    "type": "string",
+                    "description": "Detailed task description with all context the agent needs",
+                },
             },
             "required": ["task"],
         },
     },
-    {
-        "name": "explore",
-        "description": "Ad-hoc exploration using a Bash+Vision agent loop. Use for targeted questions about data structure, file contents, or multi-step signal inspection.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "data_dir": {"type": "string", "description": "Path to explore"},
-                "task": {"type": "string", "description": "What to look for"},
-            },
-            "required": ["data_dir", "task"],
-        },
-    },
 ]
 
-# Combine all: tools + agents + workflows
+# Combine all: tools + agents
 ORCHESTRATOR_TOOLS = [
     *TOOL_SCHEMAS,
     *_AGENT_SCHEMAS,
-    *_WORKFLOW_SCHEMAS,
 ]
 
 
@@ -194,18 +78,6 @@ class OrchestratorToolExecutor:
     async def _dispatch(self, tool_name: str, inp: dict) -> dict:
         p = self.project_dir
 
-        if tool_name == "explore_dataset":
-            from workflows.explore_dataset import explore_dataset
-            return await explore_dataset(inp["data_dir"], p, self.memory_backend, self.carry,
-                                         on_event=self.on_event)
-
-        if tool_name == "ingest_documents":
-            from workflows.ingest_documents import ingest_documents
-            return await ingest_documents(
-                inp.get("file_paths", []), p, self.memory_backend,
-                inp.get("data_dir"), self.carry
-            )
-
         if tool_name == "read":
             from tools.read import read
             return read(
@@ -214,45 +86,14 @@ class OrchestratorToolExecutor:
                 offset_chars=int(inp.get("offset_chars", 0)),
             )
 
-        if tool_name == "optimize_pattern":
-            from workflows.optimize_pattern import optimize_pattern
-            return await optimize_pattern(inp["pattern"], p, self.memory_backend, self.carry)
-
-        if tool_name == "teach_session":
-            from workflows.teach_session import teach_session
-            return await teach_session(
-                p, self.memory_backend, inp.get("pattern"),
-                data_dir=inp.get("data_dir"),
-                n_signals=inp.get("n_signals", 10),
-                on_event=self.on_event,
-                answer_queue=self.answer_queue,
-                plot_script=inp.get("plot_script"),
-                view_description=inp.get("view_description"),
-                ref_file_path=inp.get("ref_file_path"),
-            )
-
-        if tool_name == "review_results":
-            from workflows.review_results import review_results
-            return await review_results(p, self.memory_backend, inp.get("pattern"), self.carry)
-
-        if tool_name == "apply_rules":
-            from workflows.apply_rules import apply_rules
-            return await apply_rules(p, self.memory_backend, inp.get("pattern"))
-
-        if tool_name == "statistics":
-            from agents.statistics import statistics
-            return await statistics(
-                task=inp["task"],
-                pattern=inp.get("pattern"),
-                feature_matrix_path=str(p / "cache" / "feature_matrix.parquet"),
+        if tool_name == "task":
+            from agents.task import task
+            result_text = await task(
+                task_description=inp["task"],
                 project_dir=p,
-                context_carry=self.carry,
+                on_event=self.on_event,
             )
-
-        if tool_name == "explore":
-            from agents.explore import explore
-            return await explore(inp["data_dir"], inp["task"], p, self.carry,
-                                 on_event=self.on_event)
+            return {"response": result_text}
 
         if tool_name == "write":
             from tools.write import write
@@ -337,14 +178,16 @@ class OrchestratorToolExecutor:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
-def _load_system_prompt(project_dir: Path, memory: str) -> str:
-    prompt_path = Path(__file__).parent.parent / "agents" / "prompts" / "orchestrator.md"
+def _load_system_prompt(project_dir: Path, memory: str, global_memory: str = "") -> str:
+    prompt_path = Path(__file__).parent.parent / "prompts" / "system" / "orchestrator.md"
     base = prompt_path.read_text(encoding="utf-8")
     tmp_dir = project_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     parts = [base, f"\n## Current Session Paths\n- **Project directory:** `{project_dir}`\n- **Save all generated plots and output files to:** `{tmp_dir}`\n  (Never save to the source data directory.)"]
     if memory:
         parts.append(f"\n## Project Memory\n{memory}")
+    if global_memory:
+        parts.append(f"\n## Global Memory (across all projects)\n{global_memory}")
     return "\n".join(parts)
 
 
@@ -357,7 +200,7 @@ async def run(
     answer_queue=None,
 ) -> str:
     from session.context_builder import build_context
-    from agents.runner import SubagentConfig, invoke, ToolExecutor
+    from agents.runner import SubagentConfig, invoke
     import config
 
     project_dir = Path(project_dir)
@@ -370,15 +213,22 @@ async def run(
     for turn in ctx.get("turns", []):
         role = turn.get("role", "user")
         content = turn.get("content", "")
-        if role in ("user", "assistant") and content:
+        if role == "summary" and content:
+            messages.append({"role": "user", "content": f"[Previous conversation summary]\n{content}"})
+        elif role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_input})
 
-    # System prompt = orchestrator.md + project memory
+    # System prompt = orchestrator.md + project memory + todos/carry
     system_prompt = _load_system_prompt(
         project_dir,
         memory=ctx.get("memory", ""),
+        global_memory=ctx.get("global_memory", ""),
     )
+    from session.context_builder import format_context_for_llm
+    extra_context = format_context_for_llm(ctx)
+    if extra_context:
+        system_prompt += "\n\n" + extra_context
 
     # Tool executor
     executor = OrchestratorToolExecutor(
@@ -406,5 +256,14 @@ async def run(
 
     # Persist carry-over facts
     session.context_carry = executor.carry
+
+    # Periodic memory update (runs every ~15 turns)
+    from orchestrator.memory_gate import maybe_update_memory
+    await maybe_update_memory(session, memory_backend)
+
+    # Passive EverMemOS conversation logging (if available)
+    if hasattr(memory_backend, 'store_chat_turn'):
+        await memory_backend.store_chat_turn("user", user_input)
+        await memory_backend.store_chat_turn("assistant", result.text or "")
 
     return result.text or "(no response)"

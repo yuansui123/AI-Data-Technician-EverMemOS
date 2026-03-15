@@ -2,7 +2,7 @@
 
 Sequence:
   1. Bash: extract text from each document (PDF → pdftotext / PyMuPDF, etc.)
-  2. Think: synthesise key metadata → project_summary.md §Dataset Context
+  2. Think: synthesise key metadata → project_memory.md §Dataset Context
   3. Optionally trigger explore_dataset if a data_dir is also provided
 """
 from __future__ import annotations

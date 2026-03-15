@@ -1,3 +1,1 @@
-from interface.cli import repl, start_project
-
-__all__ = ["repl", "start_project"]
+"""Web interface package — FastAPI app with WebSocket streaming."""
