@@ -28,6 +28,7 @@ class Session:
         self.session_id: str = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
         self.turns: list[dict[str, str]] = []
         self.todos: list[dict[str, Any]] = []   # structured task list with evidence
+        self.artifacts: list[dict[str, Any]] = []  # image paths linked to turns
         self.context_carry: dict[str, Any] = {}  # small fact-passing dict between steps
         self.last_memory_turn: int = 0           # turn count at last periodic memory update
 
@@ -63,6 +64,7 @@ class Session:
         data = {
             "session_id": self.session_id,
             "turns": self.turns,
+            "artifacts": self.artifacts,
             "context_carry": self.context_carry,
             "last_memory_turn": self.last_memory_turn,
         }
@@ -83,6 +85,7 @@ class Session:
 
         session = cls(project_dir, session_id)
         session.turns = data["turns"]
+        session.artifacts = data.get("artifacts", [])
         session.context_carry = data.get("context_carry", {})
         session.last_memory_turn = data.get("last_memory_turn", 0)
 

@@ -54,7 +54,7 @@ async def list_projects():
     projects_dir = Path(config.PROJECTS_DIR)
     if not projects_dir.exists():
         return ["default"]
-    dirs = sorted(p.name for p in projects_dir.iterdir() if p.is_dir())
+    dirs = sorted(p.name for p in projects_dir.iterdir() if p.is_dir() and not p.name.startswith("_"))
     return dirs if dirs else ["default"]
 
 
@@ -374,7 +374,7 @@ HTML = """<!DOCTYPE html>
 <div class="main">
   <div id="chat">
     <div id="messages">
-      <div class="msg assistant">Hello! I'm your AI Data Technician. Share a dataset path to get started, or ask me anything about EEG/neural signal analysis.</div>
+      <div class="msg assistant">Hello! I'm your AI Data Technician.</div>
     </div>
     <div id="input-area">
       <textarea id="user-input" rows="2" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
@@ -570,7 +570,7 @@ function clearAndReconnect() {
 
 function clearChat() {
   document.getElementById('messages').innerHTML =
-    "<div class='msg assistant'>Hello! I'm your AI Data Technician. Share a dataset path to get started, or ask me anything about EEG/neural signal analysis.</div>";
+    "<div class='msg assistant'>Hello! I'm your AI Data Technician.</div>";
   pendingMsg = null;
   pendingText = '';
   thinkingEntry = null;
@@ -659,11 +659,25 @@ function handleEvent(ev) {
 
   } else if (ev.type === 'sub_tool_call') {
     // Intermediate step inside a subagent (e.g. explore's bash calls)
-    const imgP2 = ev.tool === 'vision' ? (ev.input && ev.input.image_path) : null;
-    logSubActivity('sub_call', ev.subagent, ev.tool, formatInput(ev.tool, ev.input), imgP2);
+    let imgPaths = [];
+    if (ev.tool === 'vision') {
+      if (ev.input && ev.input.image_path) imgPaths.push(ev.input.image_path);
+      if (ev.input && ev.input.images) ev.input.images.forEach(img => { if (img.path) imgPaths.push(img.path); });
+    }
+    logSubActivity('sub_call', ev.subagent, ev.tool, formatInput(ev.tool, ev.input), imgPaths);
 
   } else if (ev.type === 'sub_tool_result') {
     logSubActivity('sub_result', ev.subagent, ev.tool, formatResult(ev.tool, ev.result || ''));
+    // Surface vision results in chat so user can see what the AI observed
+    if (ev.tool === 'vision' && ev.result) {
+      try {
+        const vr = JSON.parse(ev.result);
+        const desc = vr.description || ev.result;
+        appendMessage('info', '🔍 **Vision analysis:** ' + desc);
+      } catch(e) {
+        appendMessage('info', '🔍 **Vision analysis:** ' + String(ev.result).slice(0, 500));
+      }
+    }
 
   } else if (ev.type === 'response') {
     clearThinkingEntry();
@@ -704,6 +718,11 @@ function handleEvent(ev) {
     clearThinkingEntry();
     logPlotToActivity(ev);
     showPlotModal(ev);
+
+  } else if (ev.type === 'show_plot_image') {
+    clearThinkingEntry();
+    logStaticPlotToActivity(ev);
+    appendStaticPlotToChat(ev);
 
   } else if (ev.type === 'label_signal') {
     clearThinkingEntry();
@@ -1188,14 +1207,45 @@ function logPlotToActivity(ev) {
   } catch(e) {}
 }
 
-function logSubActivity(type, subagent, tool, detail, imgPath) {
+function logStaticPlotToActivity(ev) {
+  const log = document.getElementById('activity-log');
+  const div = document.createElement('div');
+  div.className = 'activity-item show_plot';
+  const title = ev.title || 'Plot';
+  const src = 'data:image/png;base64,' + ev.image_base64;
+  div.innerHTML = '<div class="label">📊 ' + escHtml(title) + '</div>' +
+    '<img class="plot-img" src="' + src + '" alt="' + escHtml(title) +
+    '" onclick="event.stopPropagation();openLightbox(this.src)">';
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendStaticPlotToChat(ev) {
+  const messages = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  const title = ev.title || 'Plot';
+  const src = 'data:image/png;base64,' + ev.image_base64;
+  div.innerHTML = '<strong>' + escHtml(title) + '</strong><br>' +
+    '<img class="plot-img" src="' + src + '" alt="' + escHtml(title) +
+    '" onclick="event.stopPropagation();openLightbox(this.src)">';
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function logSubActivity(type, subagent, tool, detail, imgPaths) {
   const log = document.getElementById('activity-log');
   const div = document.createElement('div');
   div.className = `activity-item ${type}`;
   const icon = type === 'sub_call' ? '↳' : '↵';
   const prefix = `${escHtml(subagent)}/${escHtml(tool)}`;
   const detailHtml = detail ? `<div class="detail sub-indent">${escHtml(detail)}</div>` : '';
-  const imgHtml = imgPath ? plotImgHtml(imgPath) : '';
+  let imgHtml = '';
+  if (Array.isArray(imgPaths)) {
+    imgHtml = imgPaths.map(p => plotImgHtml(p)).join('');
+  } else if (imgPaths) {
+    imgHtml = plotImgHtml(imgPaths);
+  }
   div.innerHTML = `<div class="label">${icon} ${prefix}</div>${detailHtml}${imgHtml}`;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
@@ -1451,6 +1501,21 @@ async def websocket_endpoint(ws: WebSocket):
 
         async def on_event(event: dict):
             await ws.send_text(json.dumps(event))
+            # Track sub-agent vision image paths as session artifacts
+            if event.get("type") == "sub_tool_call" and event.get("tool") == "vision" and session:
+                inp = event.get("input", {})
+                paths = []
+                if inp.get("image_path"):
+                    paths.append(inp["image_path"])
+                for img in (inp.get("images") or []):
+                    if img.get("path"):
+                        paths.append(img["path"])
+                for p in paths:
+                    session.artifacts.append({
+                        "turn": len(session.turns),
+                        "tool": "vision",
+                        "path": p,
+                    })
 
         while True:
             data = await ws.receive_text()
@@ -1524,6 +1589,7 @@ async def websocket_endpoint(ws: WebSocket):
                     get_global_backend(),
                 )
                 session.save()
-            except Exception:
-                pass  # don't crash on reflection failure
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("End-of-session reflection failed: %s", e)
         manager.disconnect(ws)

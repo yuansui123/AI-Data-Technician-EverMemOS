@@ -39,7 +39,7 @@ async def think(
         tools=[],
         thinking_budget=budget,
         max_iterations=1,
-        max_tokens=2048,
+        max_tokens=max(budget + 2048, 4096),
     )
 
     result = await invoke(cfg, [{"role": "user", "content": content}])

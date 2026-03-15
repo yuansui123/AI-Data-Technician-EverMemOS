@@ -52,6 +52,34 @@ ORCHESTRATOR_TOOLS = [
 ]
 
 
+# ── Matplotlib preamble & epilogue (injected into plot tool code) ─────────────
+
+_MPL_PREAMBLE = """\
+import matplotlib as _mpl
+_mpl.use('Agg')
+import matplotlib.pyplot as _plt
+_plt.style.use('dark_background')
+_plt.rcParams.update({'figure.facecolor':'#0d1117','axes.facecolor':'#161b22',
+    'text.color':'#e2e8f0','axes.labelcolor':'#e2e8f0',
+    'xtick.color':'#e2e8f0','ytick.color':'#e2e8f0'})
+"""
+
+_MPL_EPILOGUE = """
+try:
+    import matplotlib.pyplot as _plt
+    if _plt.get_fignums():
+        import io as _io, base64 as _b64
+        _buf = _io.BytesIO()
+        _plt.savefig(_buf, format='png', dpi=150, bbox_inches='tight',
+                     facecolor='#0d1117', edgecolor='none')
+        _plt.close('all')
+        _buf.seek(0)
+        print('BASE64_PNG:' + _b64.b64encode(_buf.read()).decode())
+except ImportError:
+    pass
+"""
+
+
 # ── Tool executor ──────────────────────────────────────────────────────────────
 
 class OrchestratorToolExecutor:
@@ -88,8 +116,18 @@ class OrchestratorToolExecutor:
 
         if tool_name == "task":
             from agents.task import task
+            # Inject project memory so the task agent doesn't re-explore
+            memory_text = ""
+            if self.memory_backend:
+                try:
+                    memory_text = await self.memory_backend.get_summary()
+                except Exception:
+                    pass
+            desc = inp["task"]
+            if memory_text:
+                desc = f"## Project Context\n{memory_text}\n\n## Task\n{desc}"
             result_text = await task(
-                task_description=inp["task"],
+                task_description=desc,
                 project_dir=p,
                 on_event=self.on_event,
             )
@@ -110,6 +148,20 @@ class OrchestratorToolExecutor:
                 images=inp.get("images"),
                 context=inp.get("context"),
             )
+            # Log image paths as session artifacts
+            if self.session:
+                paths = []
+                if inp.get("image_path"):
+                    paths.append(inp["image_path"])
+                for img in (inp.get("images") or []):
+                    if img.get("path"):
+                        paths.append(img["path"])
+                for path_str in paths:
+                    self.session.artifacts.append({
+                        "turn": len(self.session.turns),
+                        "tool": "vision",
+                        "path": path_str,
+                    })
             return result  # already a dict
 
         if tool_name == "bash":
@@ -125,22 +177,40 @@ class OrchestratorToolExecutor:
             import json as _json
             code = inp["python_code"]
             title = inp.get("title", "Plot")
+            # Wrap with matplotlib dark-theme preamble + auto-capture epilogue
+            full_code = _MPL_PREAMBLE + "\n" + code + "\n" + _MPL_EPILOGUE
             cmd = (
-                f"$code = @'\n{code}\n'@\n"
+                f"$code = @'\n{full_code}\n'@\n"
                 "$code | Out-File -Encoding utf8 C:\\Windows\\Temp\\show_plot.py\n"
                 "python C:\\Windows\\Temp\\show_plot.py"
             )
             result = await bash(cmd, cwd=str(p))
             if not result.ok or not result.stdout.strip():
                 return {"response": f"Plot failed: {result.stderr or '(no output)'}"}
+            # Check for matplotlib base64 PNG output (scan from end)
+            raw = result.stdout.strip()
+            png_b64 = None
+            for line in reversed(raw.split("\n")):
+                if line.startswith("BASE64_PNG:"):
+                    png_b64 = line[len("BASE64_PNG:"):]
+                    break
+            if png_b64:
+                if self.on_event:
+                    await self.on_event({
+                        "type": "show_plot_image",
+                        "image_base64": png_b64,
+                        "title": title,
+                    })
+                return {"response": f"Plot '{title}' displayed in the browser (static image)."}
+            # Otherwise expect Plotly JSON
             try:
-                _json.loads(result.stdout.strip())
+                _json.loads(raw)
             except Exception as e:
-                return {"response": f"Plot code did not produce valid JSON: {e}\n{result.stdout[:300]}"}
+                return {"response": f"Plot code did not produce valid JSON or matplotlib figure: {e}\n{raw[:300]}"}
             if self.on_event:
                 await self.on_event({
                     "type": "show_plot",
-                    "plot_json": result.stdout.strip(),
+                    "plot_json": raw,
                     "title": title,
                 })
             return {"response": f"Plot '{title}' displayed in the browser."}

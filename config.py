@@ -23,7 +23,7 @@ TASK_MAX_ITER       = 15
 
 # ── Context management ────────────────────────────────────────────────────────
 AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction
-MEMORY_UPDATE_INTERVAL = 15       # turns between periodic Think memory updates
+MEMORY_UPDATE_INTERVAL = 5        # user messages between periodic Think memory updates
 
 # ── Memory backend ────────────────────────────────────────────────────────────
 MEMORY_BACKEND = "file"           # "file" | "evermemos_local" | "evermemos_cloud"
