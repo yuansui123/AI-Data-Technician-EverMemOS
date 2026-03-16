@@ -2,72 +2,159 @@
   <img src="image/icon.png" alt="AI Data Technician" width="200">
 </p>
 
-# AI Data Technician + EverMemOS
+# AI Data Technician
 
-An agentic AI research assistant for exploring, analyzing, and building classification rules on datasets — powered by Claude's tool-use architecture, **EverMemOS** for persistent semantic memory, interactive visualization, and a real-time web interface.
+An agentic AI system that learns from scientist interaction to inspect, analyze, and classify high-dimensional time series data — with persistent memory that improves across sessions.
 
-Designed for researchers working with biomedical signals (EEG, neural time-series) or any structured data who want AI-assisted pattern discovery — without writing boilerplate code.
+---
+
+## The Problem
+
+Scientists across neuroscience, physiology, and sensor engineering routinely work with high-dimensional, high-sample-rate time series: multi-channel neural recordings at 1-2 kHz, wearable sensor streams, industrial vibration data. These signals share a set of hard problems:
+
+- **Raw data is not directly consumable.** Thousands of samples per second across dozens of channels exceed both human inspection capacity and LLM context windows. Neither can reason productively about streams of raw numbers.
+- **Expert knowledge is required but doesn't scale.** Identifying artifacts, marking events, classifying signal states — these tasks demand domain expertise applied to every segment of every channel. Manual inspection is the bottleneck.
+- **No universal rules exist.** What constitutes "muscle artifact" or "clean signal" depends on hardware, electrode placement, brain region, patient population, and the scientist's specific goals. Thresholds and feature combinations vary across datasets and researchers.
+- **Current AI can't bridge the gap alone.** LLMs have domain knowledge from literature but can't directly process raw sensor data. Vision models can analyze plots but don't know which features matter for a given task.
+
+## The Approach
+
+This system bridges the gap between raw data and expert judgment through five key ideas:
+
+1. **Intermediate representations make data AI-readable.** Spectrograms, power spectral density plots, statistical features (kurtosis, line length, spectral edge frequency), and vision encoder embeddings compress time series into formats both humans and LLMs can reason about.
+
+2. **Scientific tasks reduce to pattern detection + conditional action.** Artifact rejection, event marking, state classification, signal quality assessment — they all share the same structure: find segments matching a pattern, then apply an action (include, exclude, flag, transform). The patterns and actions vary; the computational structure does not.
+
+3. **If a human can see it, we can compute it.** Any pattern visually distinct to a scientist has computable features — either mathematical (spectral power, entropy) or perceptual (cosine similarity in a vision embedding space). When existing features fail, the agent derives new ones.
+
+4. **LLM agents formalize expert knowledge into interpretable rules.** The agent translates natural language descriptions and visual examples into feature selections, threshold values, and boolean logic. It uses evolutionary search (mutation, crossover, threshold optimization) to refine rules against human feedback — producing interpretable decision trees, not black boxes.
+
+5. **LLM domain priors reduce human effort.** Knowledge from scientific literature provides strong priors on which features matter for specific pattern types, enabling meaningful rule proposals from descriptions and few examples. Active learning selects maximally informative examples from rule disagreement zones, further reducing labeling requirements.
+
+---
+
+## Demo: iEEG Analysis (MayoData1000)
+
+The following screenshots are from a real analysis session on the [MayoData1000 multicenter iEEG dataset](https://doi.org/10.1038/s41597-020-0532-5) (1,000 intracranial EEG signals, 5 kHz, 3 seconds each, SOZ-labeled).
+
+### 1. Explore — Visualize and inspect signals
+
+The scientist asks for a time series, spectrogram, and PSD of a hippocampal signal. The system loads the `.mat` file, computes all three views, and renders them in the browser.
 
 <p align="center">
-  <img src="image/ui.png" alt="AI Data Technician Web UI" width="800">
+  <img src="image/plotting.png" alt="iEEG signal visualization — time series, spectrogram, and PSD" width="800">
+</p>
+
+### 2. Teach — Identify and document signal patterns
+
+The scientist points out artifact examples. The system analyzes them visually (via vision model) and statistically, documenting the distinguishing features of each artifact type.
+
+<p align="center">
+  <img src="image/teach_signalpattern.png" alt="Teaching artifact patterns — muscle artifact and powerline contamination" width="800">
+</p>
+
+### 3. Remember — Save learned knowledge to memory
+
+After the scientist approves a set of spectrogram parameters or artifact definitions, the system saves them to persistent memory — including parameter values, rationale, and example code.
+
+<p align="center">
+  <img src="image/remember_parameter.png" alt="System saving optimized spectrogram parameters to memory" width="800">
+</p>
+
+### 4. Recall — Apply knowledge in future sessions
+
+In a new session, the scientist asks the system to plot spectrograms. The system recalls the previously optimized parameters from memory and applies them without re-learning.
+
+<p align="center">
+  <img src="image/recall_parameter.png" alt="System recalling spectrogram parameters from memory" width="800">
+</p>
+
+The system can also synthesize everything it knows about a signal pattern — combining findings from past sessions, the original paper, and domain knowledge into a comprehensive summary.
+
+<p align="center">
+  <img src="image/recall_signalpattern.png" alt="System recalling synthesized knowledge about pathological signals" width="800">
 </p>
 
 ---
 
-## Why EverMemOS?
+## Why Memory Matters
 
-AI agents forget everything between sessions. Every new conversation starts from scratch — re-exploring datasets, re-discovering patterns, re-learning your preferences. **EverMemOS** solves this.
+Without persistent memory, every AI session starts from scratch — re-exploring datasets, re-discovering patterns, re-learning preferences. Memory transforms the system from a stateless tool into a **self-improving research assistant**.
 
-EverMemOS is a pluggable memory layer that gives AI agents **persistent, semantically-searchable long-term memory**. In this project it serves as the backbone that makes the AI Data Technician genuinely useful across sessions:
+What gets remembered:
+- **Processing parameters** — spectrogram settings, filter configurations, visualization preferences
+- **Signal patterns** — artifact signatures, pathological features, clean signal characteristics (with example signal IDs, channels, and anatomy)
+- **Procedures** — analysis workflows, data loading scripts, labeling protocols
+- **Domain knowledge** — terminology, detection rules, feature definitions
 
-- **Episodic memory** — analytical findings, session summaries, labeling history are automatically extracted and stored. When you come back tomorrow, the AI already knows what it found yesterday.
-- **Profile memory** — user preferences (preferred plot styles, channel selections, analysis approaches) are learned over time. The AI adapts to how *you* work.
-- **Event log** — discrete facts (accuracy numbers, rule strings, file paths) are indexed for fast retrieval. Ask "what accuracy did we get on Rule 3?" and get an instant answer.
-- **Semantic search** — memories are retrieved by meaning, not keyword matching. Ask "what did we learn about the hippocampal channels?" and get relevant results even if those exact words were never used.
-- **Project-scoped** — each project gets its own memory space (via `group_id`), so findings from one dataset don't leak into another.
-- **Cross-project learning** — a global memory layer promotes reusable procedures and insights across all your projects.
+### Memory Architecture
 
-### Three Memory Backends
+| Layer | Scope | What it captures |
+|-------|-------|------------------|
+| **Session** | Current conversation | Chat turns, tool outputs, task progress |
+| **Project** | Across sessions | Dataset-specific findings, parameters, labeled examples |
+| **Global** | Across projects | Reusable procedures, cross-dataset insights |
 
-| Backend | Config value | Best for |
-|---------|-------------|----------|
-| **File** (default) | `"file"` | Getting started — stores `project_memory.md` as plain markdown, human-readable and git-trackable |
-| **EverMemOS Local** | `"evermemos_local"` | Full semantic memory — run the [open-source EverMemOS server](https://github.com/nicholasgasior/evermemos) locally via Docker |
-| **EverMemOS Cloud** | `"evermemos_cloud"` | Managed service at `api.evermind.ai` — no infrastructure to maintain |
+Two backends are available:
 
-Switch backends with a single line in `config.py`:
+- **File backend** — stores `project_memory.md` as plain markdown. Human-readable, git-trackable, works out of the box.
+- **EverMemOS** — persistent semantic memory with hybrid retrieval (keyword + embedding search). Run [locally via Docker](https://github.com/nicholasgasior/evermemos) or use the managed cloud service.
+- **Hybrid** — writes to both. Git-trackable files plus semantic search.
 
-```python
-MEMORY_BACKEND = "evermemos_local"   # or "evermemos_cloud" or "file"
-```
-
-The file backend works out of the box. When you're ready for semantic search, persistent memory across restarts, and automatic knowledge extraction, plug in EverMemOS — the agent code doesn't change at all.
+The orchestrator auto-compacts conversation context at ~40k tokens and periodically updates project memory every 5 user messages — knowledge is extracted continuously, not just at session end.
 
 ---
 
-## Highlights
+## Architecture
 
-**Two-Agent Architecture** — An Orchestrator agent (Claude Sonnet, extended thinking) plans and delegates, while a Task agent autonomously executes multi-step work (bash, vision, file I/O) in up to 15 iterations. Think like Claude Code, but for data analysis.
+```
+User (Browser)
+    |  WebSocket (real-time streaming)
+    v
++----------------+
+|  FastAPI Web   |  interface/web.py
+|  Server        |  Session & project management
++-------+--------+
+        |
+        v
++----------------+     +---------------+
+| Orchestrator   |---->| Task Agent    |  Up to 15 iterations
+| (Claude,       |     | (bash, vision |  autonomous tool-use
+|  ext. thinking)|     |  read, write) |
+|                |     +---------------+
+| Plans &        |
+| delegates      |---->  Tools (bash, read, plot, vision, ask, todo)
+|                |
+|                |---->  Think Agent (reasoning, memory updates, compaction)
++-------+--------+
+        |
+        v
++----------------------------------------------+
+|              Memory Backend                   |
+|  File (markdown) | EverMemOS (semantic search)|
+|                                               |
+|  Session JSON - project_memory - global_memory|
++----------------------------------------------+
+```
 
-**Persistent Memory that Actually Works** — Three-layer memory (session, project, global) with automatic compaction and periodic updates. The file backend gives you git-trackable markdown; EverMemOS gives you semantic search and automatic knowledge extraction. The AI never forgets what it learned about your data.
+**Two-agent architecture:** An Orchestrator (Claude Sonnet, extended thinking) plans and delegates, while a Task agent autonomously executes multi-step work in up to 15 tool-use iterations. A Think agent handles reasoning, memory extraction, and context compaction.
 
-**Interactive Web UI** — Real-time streaming responses via WebSocket, interactive Plotly charts with zoom/pan/hover, static matplotlib plots for scientific figures, and modal dialogs for signal labeling — all in a dark-themed browser interface.
+## Tools
 
-**Rich Tool Suite**
 | Tool | What it does |
 |------|-------------|
-| `bash` | Run Python scripts, shell commands (PowerShell on Windows) |
-| `read` | Read text files, PDFs (text extraction), MATLAB `.mat` files (v4–v7.3) |
+| `bash` | Run Python scripts, shell commands, install packages |
+| `read` | Read text files, PDFs (text extraction), MATLAB `.mat` files (v4-v7.3) |
 | `write` | Create/update files inside the project directory |
-| `vision` | Analyze single or multiple images via Gemini Flash |
+| `vision` | Analyze images via Gemini Flash (single or multi-image comparison) |
 | `plot` | Plotly (interactive) or matplotlib (static PNG, auto-captured) |
+| `recall` | Search long-term memory for past findings, procedures, parameters |
+| `remember` | Save knowledge to long-term memory (parameters, patterns, procedures) |
 | `task` | Delegate multi-step work to an autonomous sub-agent |
 | `ask` | Clarifying questions via browser modal |
-| `todo` | Structured task tracking with evidence |
+| `todo` | Structured task tracking with evidence requirements |
 
-**Composable Workflows** — High-level operations like `explore_dataset`, `teach_session` (interactive labeling), `optimize_pattern`, and `apply_rules` chain agents and tools together for complex multi-step analyses.
-
-**Multi-Format Data Support** — Load MATLAB HDF5 (`.mat` v7.3), legacy `.mat` (v4/5/6), CSVs, PDFs, EDF (via MNE), and more. Pre-installed scientific stack: NumPy, SciPy, pandas, scikit-learn, MNE, antropy, ruptures.
+**Pre-installed scientific stack:** NumPy, SciPy, pandas, scikit-learn, MNE, antropy, ruptures, h5py, mat73, matplotlib, plotly.
 
 ---
 
@@ -83,37 +170,18 @@ The file backend works out of the box. When you're ready for semantic search, pe
 ### Setup
 
 ```bash
-# Clone the repo
-git clone git@github.com:yuansui123/AI-Data-Technician-EverMemOS.git
-cd AI-Data-Technician-EverMemOS
-
-# Install all dependencies (Python 3.11 + scientific stack)
+# Clone and install
+git clone git@github.com:yuansui123/AI-Data-Technician.git
+cd AI-Data-Technician
 pixi install
 
-# Create your .env file
+# Configure API keys
 cp .env.template .env
-# Edit .env and add your API keys:
-#   ANTHROPIC_API_KEY=sk-ant-...
-#   GOOGLE_API_KEY=AIza...
+# Edit .env: ANTHROPIC_API_KEY=sk-ant-...  GOOGLE_API_KEY=AIza...
 
-# (Optional) Initialize a named project
-pixi run start -- --project MyProject --start
-
-# Launch the web UI
+# Launch
 pixi run web
-# Open http://localhost:8000 in your browser
-```
-
-### Enabling EverMemOS
-
-```bash
-# Option A: Local (Docker)
-docker run -p 1995:1995 ghcr.io/nicholasgasior/evermemos:latest
-# Then set MEMORY_BACKEND = "evermemos_local" in config.py
-
-# Option B: Cloud
-# Add to .env: EVERMEM_API_KEY=your-key
-# Then set MEMORY_BACKEND = "evermemos_cloud" in config.py
+# Open http://localhost:8000
 ```
 
 ### CLI Options
@@ -124,166 +192,40 @@ python main.py [OPTIONS]
 --project NAME    Project name (default: "default")
 --start           Initialize a new project directory
 --port N          Web UI port (default: 8000)
---debug           Log all LLM I/O to logs/debug_<timestamp>.txt
+--debug           Log all LLM I/O to logs/
 ```
 
----
+### Enabling EverMemOS
 
-## Architecture
+```bash
+# Local (Docker)
+docker run -p 1995:1995 ghcr.io/nicholasgasior/evermemos:latest
+# Set MEMORY_BACKEND = "evermemos_local" in config.py
 
+# Cloud
+# Add EVERMEM_API_KEY=your-key to .env
+# Set MEMORY_BACKEND = "evermemos_cloud" in config.py
+
+# Hybrid (both file + EverMemOS)
+# Set MEMORY_BACKEND = "hybrid" in config.py
 ```
-User (Browser)
-    │  WebSocket (real-time streaming)
-    ▼
-┌──────────────┐
-│  FastAPI Web  │  interface/web.py
-│  Server       │  Session & project management
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐     ┌─────────────┐
-│ Orchestrator │────▶│ Task Agent  │  Up to 15 iterations
-│ (Claude,     │     │ (bash,      │  autonomous tool-use
-│  thinking)   │     │  vision,    │
-│              │     │  read,      │
-│ Plans &      │     │  write)     │
-│ delegates    │     └─────────────┘
-│              │
-│              │────▶ Tools (bash, read, plot, vision, ask, todo)
-│              │
-│              │────▶ Workflows (explore, teach, optimize, apply)
-│              │
-│              │────▶ Think Agent (reasoning, memory updates, compaction)
-└──────────────┘
-       │
-       ▼
-┌──────────────────────────────────────────────┐
-│              Memory Backend                   │
-│                                               │
-│  ┌─────────┐  ┌───────────────┐  ┌────────┐ │
-│  │  File    │  │ EverMemOS     │  │ Ever-  │ │
-│  │ (markdown│  │ Local (Docker)│  │ MemOS  │ │
-│  │  default)│  │ semantic search│  │ Cloud  │ │
-│  └─────────┘  └───────────────┘  └────────┘ │
-│                                               │
-│  Session JSON ─ project_memory.md ─ global   │
-└──────────────────────────────────────────────┘
-```
-
-### Memory Layers
-
-| Layer | Scope | Storage | EverMemOS enhancement |
-|-------|-------|---------|----------------------|
-| **Session** | Current conversation | `sessions/session_{id}.json` | Chat turns auto-extracted into episodic memory |
-| **Project** | Across sessions | `project_memory.md` | Semantic search over all findings, profiles, event logs |
-| **Global** | Across projects | `global_memory.md` | Cross-project pattern recognition and knowledge transfer |
-
-The orchestrator auto-compacts conversation context at ~40k tokens and periodically updates project memory every 5 user messages — so the AI never "forgets" what it learned about your data.
-
-With EverMemOS enabled, memories are automatically categorized (episodic, profile, event), indexed for hybrid retrieval (keyword + semantic), and persisted independently of the markdown files — giving you both human-readable docs and machine-searchable knowledge.
-
----
-
-## Project Structure
-
-```
-AI_Data_Technician/
-├── main.py                   # Entry point — argparse CLI, launches FastAPI
-├── config.py                 # All models, budgets, paths, API keys
-├── pixi.toml                 # Dependencies & tasks
-├── .env.template             # API key template
-│
-├── agents/                   # LLM agent loops
-│   ├── runner.py             # Core invoke() engine (streaming, retry, thinking)
-│   ├── task.py               # Task agent — autonomous multi-step tool-use
-│   └── think.py              # Think agent — single-pass reasoning & memory
-│
-├── orchestrator/
-│   └── loop.py               # Main decision loop + tool dispatch
-│
-├── tools/                    # Deterministic tools (schemas + implementations)
-│   ├── bash.py, read.py, write.py, vision.py, plot.py, ask.py, todo.py
-│   └── __init__.py           # Tool registry
-│
-├── workflows/                # Multi-step composed operations
-│   ├── explore_dataset.py    # Analyze structure, stats, sample plots
-│   ├── teach_session.py      # Interactive signal labeling
-│   ├── optimize_pattern.py   # AI-guided rule refinement
-│   └── apply_rules.py        # Batch classification
-│
-├── memory/                   # Pluggable memory backends
-│   ├── backend.py            # Abstract interface + FileMemoryBackend
-│   └── evermemos.py          # EverMemOS client (local + cloud)
-│
-├── session/
-│   └── session.py            # Turns, todos, artifacts, context carry
-│
-├── interface/
-│   └── web.py                # FastAPI + WebSocket + embedded HTML/JS
-│
-├── prompts/system/           # System prompts (injected at runtime)
-│   ├── orchestrator.md
-│   ├── task.md
-│   └── think.md
-│
-└── projects/                 # User data (per-project)
-    └── {name}/
-        ├── project_memory.md # Persistent knowledge base
-        ├── sessions/         # Conversation history (gitignored)
-        ├── feedback/         # User labels (gitignored)
-        └── tmp/              # Temp files (gitignored)
-```
-
----
-
-## Usage Examples
-
-**Explore a dataset**
-> "Explore the data at C:\path\to\my\data"
-
-The AI will scan file structure, load samples, compute statistics, generate plots, and store findings in project memory.
-
-**Visualize signals**
-> "Plot channel 5 from trial 10 of the stim1 epoch"
-
-Generates an interactive Plotly chart (or matplotlib for spectrograms/topomaps) displayed directly in the browser.
-
-**Teach patterns**
-> "I want to label some signals"
-
-Opens an interactive labeling session — the AI shows you signals one at a time and you classify them via browser buttons.
-
-**Build classification rules**
-> "Find a rule that separates the good trials from the bad ones"
-
-The AI uses the `optimize_pattern` workflow to iteratively refine rules, testing accuracy at each step.
 
 ---
 
 ## Configuration
 
-All settings live in [`config.py`](config.py):
+All settings in [`config.py`](config.py):
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `ORCHESTRATOR_MODEL` | `claude-sonnet-4-6` | Main orchestrator model |
 | `THINK_MODEL` | `claude-sonnet-4-6` | Reasoning & memory model |
 | `VISION_MODEL` | `gemini-2.5-flash` | Image analysis model |
-| `MEMORY_BACKEND` | `"file"` | Memory backend: `"file"`, `"evermemos_local"`, or `"evermemos_cloud"` |
+| `MEMORY_BACKEND` | `"hybrid"` | `"file"`, `"evermemos_local"`, `"evermemos_cloud"`, or `"hybrid"` |
 | `ORCHESTRATOR_THINKING` | `4000` | Extended thinking token budget |
 | `TASK_MAX_ITER` | `15` | Max tool-use iterations per task |
 | `AUTO_COMPACT_THRESHOLD` | `40000` | Token count triggering compaction |
 | `MEMORY_UPDATE_INTERVAL` | `5` | User messages between memory updates |
-
----
-
-## Extending
-
-**Add a tool** — Create `tools/mytool.py` with a function + `SCHEMA` dict, register it in `tools/__init__.py`.
-
-**Add a workflow** — Create `workflows/myworkflow.py` with an async function, register in `workflows/__init__.py`.
-
-**Swap memory backend** — Implement the `MemoryBackend` interface in `memory/backend.py` and set `MEMORY_BACKEND` in `config.py`. See `memory/evermemos.py` for a full reference implementation.
 
 ---
 
