@@ -22,6 +22,15 @@ projects/*/tmp/
 projects/*/sessions/
 projects/*/feedback/
 
+# Claude Code
+.claude/
+
+# Scratch / temp
+tmpt/
+
+# User project data
+projects/
+
 # IDE
 .vscode/
 .idea/
