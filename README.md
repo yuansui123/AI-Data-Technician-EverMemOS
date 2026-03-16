@@ -8,28 +8,11 @@ An agentic AI system that learns from scientist interaction to inspect, analyze,
 
 ---
 
-## The Problem
+## Motivation
 
-Scientists across neuroscience, physiology, and sensor engineering routinely work with high-dimensional, high-sample-rate time series: multi-channel neural recordings at 1-2 kHz, wearable sensor streams, industrial vibration data. These signals share a set of hard problems:
+Scientists across neuroscience, physiology, and sensor engineering routinely work with high-dimensional, high-sample-rate time series — multi-channel neural recordings at 1-2 kHz, wearable sensor streams, industrial vibration data. Raw samples exceed both human inspection capacity and LLM context windows, yet the core tasks (artifact rejection, event marking, signal classification) all demand domain expertise applied at scale. No universal thresholds exist — what counts as "muscle artifact" or "clean signal" varies by hardware, brain region, patient population, and analytical goals.
 
-- **Raw data is not directly consumable.** Thousands of samples per second across dozens of channels exceed both human inspection capacity and LLM context windows. Neither can reason productively about streams of raw numbers.
-- **Expert knowledge is required but doesn't scale.** Identifying artifacts, marking events, classifying signal states — these tasks demand domain expertise applied to every segment of every channel. Manual inspection is the bottleneck.
-- **No universal rules exist.** What constitutes "muscle artifact" or "clean signal" depends on hardware, electrode placement, brain region, patient population, and the scientist's specific goals. Thresholds and feature combinations vary across datasets and researchers.
-- **Current AI can't bridge the gap alone.** LLMs have domain knowledge from literature but can't directly process raw sensor data. Vision models can analyze plots but don't know which features matter for a given task.
-
-## The Approach
-
-This system bridges the gap between raw data and expert judgment through five key ideas:
-
-1. **Intermediate representations make data AI-readable.** Spectrograms, power spectral density plots, statistical features (kurtosis, line length, spectral edge frequency), and vision encoder embeddings compress time series into formats both humans and LLMs can reason about.
-
-2. **Scientific tasks reduce to pattern detection + conditional action.** Artifact rejection, event marking, state classification, signal quality assessment — they all share the same structure: find segments matching a pattern, then apply an action (include, exclude, flag, transform). The patterns and actions vary; the computational structure does not.
-
-3. **If a human can see it, we can compute it.** Any pattern visually distinct to a scientist has computable features — either mathematical (spectral power, entropy) or perceptual (cosine similarity in a vision embedding space). When existing features fail, the agent derives new ones.
-
-4. **LLM agents formalize expert knowledge into interpretable rules.** The agent translates natural language descriptions and visual examples into feature selections, threshold values, and boolean logic. It uses evolutionary search (mutation, crossover, threshold optimization) to refine rules against human feedback — producing interpretable decision trees, not black boxes.
-
-5. **LLM domain priors reduce human effort.** Knowledge from scientific literature provides strong priors on which features matter for specific pattern types, enabling meaningful rule proposals from descriptions and few examples. Active learning selects maximally informative examples from rule disagreement zones, further reducing labeling requirements.
+This system bridges the gap by converting raw time series into intermediate representations (spectrograms, PSD plots, statistical features) that both humans and LLMs can reason about, then using interactive human-AI collaboration to formalize expert knowledge into interpretable detection rules. The agent translates natural language descriptions and visual examples into feature selections, threshold values, and boolean logic — refining them against human feedback through evolutionary search. LLM domain priors from scientific literature provide strong initial proposals, and active learning reduces the number of labels needed. Persistent memory ensures that learned parameters, signal patterns, and processing procedures carry across sessions, creating a system that improves with every interaction.
 
 ---
 
