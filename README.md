@@ -16,6 +16,127 @@ This system bridges the gap by converting raw time series into intermediate repr
 
 ---
 
+## Features
+
+### Three-Agent Architecture
+
+The system runs on three specialized agents that coordinate to plan, execute, and learn:
+
+**Orchestrator Agent** — The decision-maker. Powered by Claude Sonnet with extended thinking (4,000-token reasoning budget), the Orchestrator receives each user message, reasons about what needs to happen, and decides whether to call a tool directly, delegate to the Task agent, or respond. It maintains the full conversation context, manages the tool-use loop (up to 25 iterations for complex requests), and decides when to recall from memory or save new knowledge. Extended thinking gives it a private scratchpad to plan multi-step analyses before acting — for example, deciding which signals to sample, what statistics to compute, and how to present results, all before making the first tool call.
+
+**Task Agent** — The workhorse. When the Orchestrator encounters multi-step work — exploring a dataset, running a statistical analysis across dozens of files, generating and testing code — it delegates to the Task agent. The Task agent gets a fresh context with its own tool-use loop (up to 15 iterations) and access to `bash`, `read`, `write`, and `vision`. It works autonomously: loading files, computing features, writing results, and returning a final summary. Because it runs independently, the Orchestrator can continue reasoning about the bigger picture while the Task agent handles the details. The Orchestrator injects all necessary context (file paths, column names, data formats, prior findings) into the task description so the Task agent can work without access to the conversation history.
+
+**Think Agent** — The knowledge keeper. A single-pass reasoning agent (no tools) with a 3,000-token thinking budget, the Think agent handles three critical functions:
+1. **Memory extraction** — Every 5 user messages, the Think agent reviews recent conversation turns and updates `project_memory.md` with new findings, pruning stale facts and consolidating to stay under 5,000 tokens.
+2. **Context compaction** — When the conversation exceeds 40,000 tokens, the Think agent summarizes the oldest 20 turns into a ~200-word paragraph that preserves key findings, metrics, and decisions. This keeps the context window fresh without losing information.
+3. **Session reflection** — When a session ends, the Think agent reviews the full conversation and promotes reusable procedures, user preferences, and cross-project insights to global memory.
+
+### Tools
+
+| Tool | What it does |
+|------|-------------|
+| `bash` | Execute Python scripts, shell commands, or install packages via PowerShell (Windows) or shell (Unix). Supports timeouts and environment variable injection. |
+| `read` | Read text files with optional offset/limit paging. Extracts text from PDFs (via PyMuPDF) and loads MATLAB `.mat` files (v4 through v7.3 via scipy and h5py), returning structure and shape information. |
+| `write` | Create or update files inside the project directory. Path-restricted — refuses to write outside the project boundary. |
+| `vision` | Send one or more images (up to 5) to Gemini Flash for structured analysis. Supports single-image description and multi-image comparison with named references. The system injects project memory into the vision prompt so the model can reference known patterns and parameters. |
+| `plot` | Generate charts displayed in the browser. Two modes: **Plotly (interactive)** — code produces a figure dict printed as JSON, rendered as a zoomable/pannable chart with hover tooltips. **Matplotlib (static)** — code creates figures normally; a preamble auto-applies dark theme and an epilogue captures all open figures as base64 PNG, displayed inline with a lightbox. |
+| `recall` | Search long-term memory across both project and global layers. Three-phase process: (1) retrieve matching memories via keyword + semantic search, (2) emit results to the UI, (3) synthesize findings through the Think agent into a coherent summary that distinguishes project-specific vs. cross-project knowledge. |
+| `remember` | Explicitly save knowledge to long-term memory. Stores content with descriptive tags for future retrieval. Supports `project` scope (dataset-specific) or `global` scope (cross-project). In hybrid mode, writes to both file and EverMemOS simultaneously. |
+| `task` | Delegate multi-step work to an autonomous Task agent. The orchestrator packs all necessary context into the description — the Task agent cannot see the conversation. Useful for exploration, statistical analysis, code generation, and evaluation. |
+| `ask` | Pause execution and ask the user a clarifying question via a browser modal. The agent waits (up to 10 minutes) for the user's response before continuing. Used only when genuinely blocked. |
+| `todo` | Create or update a structured task list for the current session. Each item has an ID, description, and status (`pending` → `running` → `done`/`failed`). Evidence from tool output is mandatory for marking items done or failed — no reasoning-only completions. |
+
+**Pre-installed scientific stack:** NumPy, SciPy, pandas, scikit-learn, MNE, antropy, ruptures, h5py, mat73, matplotlib, plotly, statsmodels, scikit-image.
+
+### Real-Time Web Interface
+
+The browser-based UI connects via WebSocket for real-time streaming — no polling, no page refreshes.
+
+- **Chat panel** — Messages stream in token-by-token as the agent generates them. Markdown rendered with sanitized HTML (XSS-safe via DOMPurify).
+- **Activity panel** — A sidebar showing live tool calls and results as they happen. Color-coded labels distinguish orchestrator tools (blue), sub-agent calls (purple), and results (green). Memory recalls and saves appear with their content.
+- **Interactive plots** — Plotly charts open as modals with full zoom, pan, and hover. Matplotlib figures display inline with a lightbox for detailed inspection.
+- **Ask modal** — When the agent needs clarification, a question appears in the chat with an input field. The agent pauses until you respond.
+- **Todo tracker** — The task list appears at the top of the activity panel, updating in real-time as the agent works through steps.
+- **Status indicator** — A colored dot shows connection state (green = connected, amber = agent is thinking).
+
+---
+
+## Memory System
+
+### Why Memory Matters
+
+Without persistent memory, every AI session starts from scratch — re-exploring datasets, re-discovering patterns, re-learning preferences. A scientist who spent 20 minutes teaching the system that `nperseg=512` with 93% overlap produces the clearest spectrograms for their hippocampal recordings would have to repeat that lesson in every new session.
+
+Memory transforms the system from a stateless tool into a self-improving research assistant. After a few sessions, the system knows how to load your data, which parameters work best for your signals, what artifacts look like in your recordings, and what analysis procedures you prefer — and it applies all of this automatically.
+
+### What Gets Remembered
+
+- **Processing parameters** — Spectrogram settings (nperseg, overlap, colormap, normalization), filter configurations, visualization preferences. Stored with rationale and example code so the system can reproduce them exactly.
+- **Signal patterns** — Artifact signatures (muscle artifact, powerline contamination, electrode pop), pathological features (HFOs, spike-wave complexes), clean signal characteristics. Each pattern includes example signal IDs, channels, anatomy, and distinguishing features.
+- **Procedures** — Analysis workflows, data loading scripts, labeling protocols, classification pipelines. Stored as step-by-step instructions the system can follow in future sessions.
+- **Domain knowledge** — Terminology definitions, detection rules, feature engineering approaches, dataset-specific metadata. Built up through conversation with the scientist.
+
+### Three-Layer Architecture
+
+Memory is organized in three layers, each with a different scope and lifetime:
+
+**Layer 1 — Session Memory**
+Scope: Current conversation only. Stored as a JSON file (`sessions/session_{id}.json`) containing every chat turn, tool call, tool result, artifact reference, and the current todo list. The session is saved after every turn so nothing is lost if the connection drops. Context carry — a lightweight key-value store — lets the orchestrator pass small facts between tool calls without re-reading files.
+
+**Layer 2 — Project Memory**
+Scope: Across sessions within the same project. Maintained as `project_memory.md` — a structured markdown document that the Think agent updates every 5 user messages. Contains dataset descriptions (file paths, formats, column names, sampling rates), analysis findings, parameter choices, and pattern definitions. This file is injected into the orchestrator's system prompt at the start of every turn, giving the agent immediate access to everything learned in prior sessions. Because it's plain markdown, it's human-readable, editable, and git-trackable.
+
+**Layer 3 — Global Memory**
+Scope: Across all projects. Stored in `projects/_global/global_memory.md`. Populated by end-of-session reflection — the Think agent reviews the conversation and promotes three categories of knowledge: **reusable procedures** (analysis workflows that apply to any dataset), **user preferences** (formatting choices, communication style, tool preferences), and **cross-project insights** (patterns or techniques discovered in one dataset that generalize). Global memory is also injected into the orchestrator's context, so knowledge earned on one project transfers to the next.
+
+### Memory Lifecycle
+
+```
+  User teaches something
+         |
+         v
+  Orchestrator calls `remember` ──────> Stored in project or global memory
+         |                                with tags for future retrieval
+         v
+  Every 5 messages ───────────────────> Think agent auto-extracts findings
+         |                                into project_memory.md
+         v
+  Session ends ───────────────────────> Think agent reflects on full session
+         |                                Promotes procedures/preferences/insights
+         v                                to global memory
+  Next session starts ────────────────> project_memory.md + global_memory.md
+                                          injected into system prompt
+                                          Agent has full context from day one
+```
+
+### How Memory Helps Users
+
+**Session 1:** The scientist asks the system to plot a spectrogram. The system uses default parameters. The scientist says "the frequency bands are washed out — try nperseg=512 with 93% overlap and LogNorm." The system applies the changes, the scientist approves, and the system saves the parameters to memory with rationale and example code.
+
+**Session 2:** The scientist asks for a spectrogram of a different signal. The system recalls the previously optimized parameters from memory and applies them automatically — no re-teaching needed. The scientist can focus on the analysis, not the setup.
+
+**Session 5:** The scientist starts a new project with a different dataset. The system recalls from global memory that LogNorm spectrograms with high overlap work well for neural recordings, and applies similar settings as a starting point — transferring knowledge across projects.
+
+**Session 10:** The scientist asks the system to "check this signal for artifacts." The system recalls artifact definitions from memory — muscle artifact (broadband high-frequency power), powerline contamination (60 Hz harmonic peaks), electrode pop (sharp transients) — and runs detection using previously learned thresholds, without the scientist re-defining any of them.
+
+### Memory Backends
+
+Two storage backends are available, and they can be combined:
+
+**File Backend** — Stores `project_memory.md` as plain markdown. Human-readable, git-trackable, works out of the box with no external dependencies. Retrieval is full-text (returns the entire document). Best for teams that want version-controlled memory alongside their code.
+
+**EverMemOS Backend** — A persistent semantic memory service with hybrid retrieval (keyword matching + embedding-based similarity search). Memories are stored with metadata (timestamps, tags, memory types, group IDs) and retrieved using natural language queries that find conceptually related knowledge, not just keyword matches. Available as a [local Docker container](https://github.com/nicholasgasior/evermemos) or managed cloud service.
+
+**Hybrid Backend** — Writes to both file and EverMemOS simultaneously. File provides durability and git-trackability; EverMemOS provides semantic search. This is the default configuration — you get the best of both backends.
+
+### Memory Quality Control
+
+The memory gate (`orchestrator/memory_gate.py`) controls when and how project memory is updated. Rather than updating memory on every message (which would be noisy), it checks whether enough new information has accumulated since the last update (`MEMORY_UPDATE_INTERVAL * 2` turns). When triggered, it sends recent turns to the Think agent with the current memory document and instructions to merge new findings, prune stale facts, and keep each section under 500 words. The result: memory stays current but compact.
+
+The todo system adds a second quality layer — items cannot be marked as `done` or `failed` without evidence from an actual tool result. This prevents the agent from claiming completion based on reasoning alone, ensuring that memory entries are grounded in real observations.
+
+---
+
 ## Demo: iEEG Analysis (MayoData1000)
 
 The following screenshots are from a real analysis session on the [MayoData1000 multicenter iEEG dataset](https://doi.org/10.1038/s41597-020-0532-5) (1,000 intracranial EEG signals, 5 kHz, 3 seconds each, SOZ-labeled).
@@ -60,34 +181,6 @@ The system can also synthesize everything it knows about a signal pattern — co
 
 ---
 
-## Why Memory Matters
-
-Without persistent memory, every AI session starts from scratch — re-exploring datasets, re-discovering patterns, re-learning preferences. Memory transforms the system from a stateless tool into a **self-improving research assistant**.
-
-What gets remembered:
-- **Processing parameters** — spectrogram settings, filter configurations, visualization preferences
-- **Signal patterns** — artifact signatures, pathological features, clean signal characteristics (with example signal IDs, channels, and anatomy)
-- **Procedures** — analysis workflows, data loading scripts, labeling protocols
-- **Domain knowledge** — terminology, detection rules, feature definitions
-
-### Memory Architecture
-
-| Layer | Scope | What it captures |
-|-------|-------|------------------|
-| **Session** | Current conversation | Chat turns, tool outputs, task progress |
-| **Project** | Across sessions | Dataset-specific findings, parameters, labeled examples |
-| **Global** | Across projects | Reusable procedures, cross-dataset insights |
-
-Two backends are available:
-
-- **File backend** — stores `project_memory.md` as plain markdown. Human-readable, git-trackable, works out of the box.
-- **EverMemOS** — persistent semantic memory with hybrid retrieval (keyword + embedding search). Run [locally via Docker](https://github.com/nicholasgasior/evermemos) or use the managed cloud service.
-- **Hybrid** — writes to both. Git-trackable files plus semantic search.
-
-The orchestrator auto-compacts conversation context at ~40k tokens and periodically updates project memory every 5 user messages — knowledge is extracted continuously, not just at session end.
-
----
-
 ## Architecture
 
 ```
@@ -119,25 +212,6 @@ User (Browser)
 |  Session JSON - project_memory - global_memory|
 +----------------------------------------------+
 ```
-
-**Two-agent architecture:** An Orchestrator (Claude Sonnet, extended thinking) plans and delegates, while a Task agent autonomously executes multi-step work in up to 15 tool-use iterations. A Think agent handles reasoning, memory extraction, and context compaction.
-
-## Tools
-
-| Tool | What it does |
-|------|-------------|
-| `bash` | Run Python scripts, shell commands, install packages |
-| `read` | Read text files, PDFs (text extraction), MATLAB `.mat` files (v4-v7.3) |
-| `write` | Create/update files inside the project directory |
-| `vision` | Analyze images via Gemini Flash (single or multi-image comparison) |
-| `plot` | Plotly (interactive) or matplotlib (static PNG, auto-captured) |
-| `recall` | Search long-term memory for past findings, procedures, parameters |
-| `remember` | Save knowledge to long-term memory (parameters, patterns, procedures) |
-| `task` | Delegate multi-step work to an autonomous sub-agent |
-| `ask` | Clarifying questions via browser modal |
-| `todo` | Structured task tracking with evidence requirements |
-
-**Pre-installed scientific stack:** NumPy, SciPy, pandas, scikit-learn, MNE, antropy, ruptures, h5py, mat73, matplotlib, plotly.
 
 ---
 
