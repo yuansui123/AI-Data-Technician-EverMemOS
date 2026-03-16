@@ -7,11 +7,12 @@ from tools.write import write, SCHEMA as WRITE_SCHEMA
 from tools.ask import SCHEMA as ASK_SCHEMA
 from tools.todo import SCHEMA as TODO_SCHEMA
 from tools.plot import SCHEMA as PLOT_SCHEMA
+from tools.recall import SCHEMA as RECALL_SCHEMA
 
 # All tool schemas — single import for orchestrator
 TOOL_SCHEMAS = [
     BASH_SCHEMA, READ_SCHEMA, WRITE_SCHEMA, VISION_SCHEMA,
-    ASK_SCHEMA, TODO_SCHEMA, PLOT_SCHEMA,
+    ASK_SCHEMA, TODO_SCHEMA, PLOT_SCHEMA, RECALL_SCHEMA,
 ]
 
 # Tool list for task agent (bash + vision + read + write)
@@ -20,6 +21,6 @@ TASK_TOOLS = [BASH_SCHEMA, VISION_SCHEMA, READ_SCHEMA, WRITE_SCHEMA]
 __all__ = [
     "bash", "vision", "read", "write",
     "BASH_SCHEMA", "VISION_SCHEMA", "READ_SCHEMA", "WRITE_SCHEMA", "ASK_SCHEMA",
-    "TODO_SCHEMA", "PLOT_SCHEMA",
+    "TODO_SCHEMA", "PLOT_SCHEMA", "RECALL_SCHEMA",
     "TOOL_SCHEMAS", "TASK_TOOLS",
 ]

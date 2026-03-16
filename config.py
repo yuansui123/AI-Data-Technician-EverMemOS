@@ -26,7 +26,7 @@ AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction
 MEMORY_UPDATE_INTERVAL = 5        # user messages between periodic Think memory updates
 
 # ── Memory backend ────────────────────────────────────────────────────────────
-MEMORY_BACKEND = "file"           # "file" | "evermemos_local" | "evermemos_cloud"
+MEMORY_BACKEND = "evermemos_cloud" # "file" | "evermemos_local" | "evermemos_cloud"
 
 # EverMemOS endpoints — resolved automatically from MEMORY_BACKEND
 _EVERMEMOS_URLS = {
@@ -34,10 +34,9 @@ _EVERMEMOS_URLS = {
     "evermemos_cloud": "https://api.evermind.ai/api/v0",
 }
 EVERMEMOS_BASE_URL = _EVERMEMOS_URLS.get(MEMORY_BACKEND, _EVERMEMOS_URLS["evermemos_local"])
-EVERMEMOS_API_KEY  = os.getenv("EVERMEM_API_KEY", "")  # only needed for cloud
+EVERMEMOS_API_KEY  = os.getenv("EVERMEMOS_API_KEY", "")  # only needed for cloud
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-V4CEDARS_LIB = r"C:\Users\yuans\Desktop\ClaudeCode\v4cedars\lib"
 PROJECTS_DIR = str(_HERE / "projects")
 
 # ── API keys (from environment) ───────────────────────────────────────────────

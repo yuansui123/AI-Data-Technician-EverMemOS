@@ -175,14 +175,16 @@ class OrchestratorToolExecutor:
         if tool_name == "plot":
             from tools.bash import bash
             import json as _json
+            import tempfile
             code = inp["python_code"]
             title = inp.get("title", "Plot")
             # Wrap with matplotlib dark-theme preamble + auto-capture epilogue
             full_code = _MPL_PREAMBLE + "\n" + code + "\n" + _MPL_EPILOGUE
+            plot_script = Path(tempfile.gettempdir()) / "show_plot.py"
             cmd = (
                 f"$code = @'\n{full_code}\n'@\n"
-                "$code | Out-File -Encoding utf8 C:\\Windows\\Temp\\show_plot.py\n"
-                "python C:\\Windows\\Temp\\show_plot.py"
+                f"$code | Out-File -Encoding utf8 {plot_script}\n"
+                f"python {plot_script}"
             )
             result = await bash(cmd, cwd=str(p))
             if not result.ok or not result.stdout.strip():
@@ -226,6 +228,9 @@ class OrchestratorToolExecutor:
         if tool_name == "todo":
             return self._todo_write(inp["todos"])
 
+        if tool_name == "recall":
+            return await self._recall(inp)
+
         raise ValueError(f"Unknown tool: {tool_name!r}")
 
     def _todo_write(self, todos: list) -> dict:
@@ -244,6 +249,119 @@ class OrchestratorToolExecutor:
         if self.session is not None:
             self.session.todos = todos
         return {"todos_saved": True, "count": len(todos)}
+
+    async def _recall(self, inp: dict) -> dict:
+        """Recall tool — search L2 project + L3 global memory, synthesize via Think.
+
+        Three phases:
+          1. Retrieve from both project and global backends
+          2. Emit UI event with queries + results
+          3. Synthesize with Think agent (preserving project/global distinction)
+        """
+        from memory.backend import get_global_backend
+
+        objective = inp["objective"]
+        queries = inp.get("queries", [])[:3]
+        top_k = inp.get("top_k", 8)
+
+        all_results: list[dict] = []
+
+        # ── Phase 1: Retrieve from both memory layers ─────────────────────
+        global_backend = get_global_backend()
+
+        for query in queries:
+            # L2 project memory
+            if hasattr(self.memory_backend, "retrieve_detailed"):
+                project_hits = await self.memory_backend.retrieve_detailed(query, top_k=top_k)
+                for hit in project_hits:
+                    hit["source"] = "project"
+                    all_results.append(hit)
+            else:
+                # FileMemoryBackend fallback
+                summary = await self.memory_backend.get_summary()
+                if summary:
+                    all_results.append({
+                        "content": summary, "memory_type": "summary",
+                        "keywords": [], "timestamp": "", "group_id": "",
+                        "user_id": "", "source": "project",
+                    })
+
+            # L3 global memory
+            if hasattr(global_backend, "retrieve_detailed"):
+                global_hits = await global_backend.retrieve_detailed(query, top_k=top_k)
+                for hit in global_hits:
+                    hit["source"] = "global"
+                    all_results.append(hit)
+            else:
+                summary = await global_backend.get_summary()
+                if summary:
+                    all_results.append({
+                        "content": summary, "memory_type": "summary",
+                        "keywords": [], "timestamp": "", "group_id": "",
+                        "user_id": "", "source": "global",
+                    })
+
+        # Deduplicate by content
+        seen = set()
+        unique_results = []
+        for r in all_results:
+            key = r["content"][:200]
+            if key not in seen:
+                seen.add(key)
+                unique_results.append(r)
+        all_results = unique_results
+
+        # ── Phase 2: Emit UI event with full details ──────────────────────
+        if self.on_event:
+            await self.on_event({
+                "type": "recall",
+                "objective": objective,
+                "queries": queries,
+                "results": all_results,
+                "result_count": len(all_results),
+            })
+
+        # ── Phase 3: Synthesize via Think agent ───────────────────────────
+        if not all_results:
+            return {"response": "No relevant memories found. Proceeding without recalled knowledge."}
+
+        # Group results by source for Think
+        project_lines = []
+        global_lines = []
+        for r in all_results:
+            ts = r.get("timestamp", "")[:10]
+            mtype = r.get("memory_type", "unknown")
+            kw = ", ".join(r.get("keywords", []))
+            line = f"- [{mtype}"
+            if ts:
+                line += f", {ts}"
+            line += f"] {r['content']}"
+            if kw:
+                line += f"  [keywords: {kw}]"
+            if r.get("source") == "global":
+                global_lines.append(line)
+            else:
+                project_lines.append(line)
+
+        grouped_text = ""
+        if project_lines:
+            grouped_text += "## Project Memory (this project)\n" + "\n".join(project_lines) + "\n\n"
+        if global_lines:
+            grouped_text += "## Global Memory (cross-project)\n" + "\n".join(global_lines) + "\n\n"
+
+        prompt = (
+            f"MODE: recall_synthesis\n\n"
+            f"## Objective\n{objective}\n\n"
+            f"## Retrieved Memories\n{grouped_text}"
+        )
+
+        from agents.think import think
+        synthesis = await think(prompt, thinking_budget=2000)
+
+        if synthesis.startswith("MODE: no_update"):
+            return {"response": "Memories found but none were relevant to the objective."}
+
+        return {"response": f"## Recalled Knowledge\n\n{synthesis}"}
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────

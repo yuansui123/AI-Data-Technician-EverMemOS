@@ -126,6 +126,7 @@ HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Data Technician</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -286,65 +287,9 @@ HTML = """<!DOCTYPE html>
                      padding: 6px 16px; border-radius: 6px; cursor: pointer; }
   #plot-modal-send:hover { background: #6366f1; }
 
-  /* Plot-modal two-column body: chart | divider | labeling panel */
-  #plot-modal-body { display: flex; flex: 1; min-height: 0; gap: 0; overflow: hidden; }
-  #plot-modal-chart { flex: 1; min-width: 200px; min-height: 0; }
-  #pm-divider { width: 5px; flex-shrink: 0; cursor: col-resize; background: #2d3147;
-                transition: background .15s; user-select: none; }
-  #pm-divider:hover, #pm-divider.dragging { background: #6366f1; }
-  #pm-panel { width: 300px; flex-shrink: 0; background: #111827; border-left: 1px solid #2d3147;
-              display: flex; flex-direction: column; overflow-y: auto; padding: 10px 12px; gap: 6px; }
-  .pm-section-lbl { font-size: 11px; font-weight: 700; color: #f59e0b; letter-spacing: .05em;
-                    text-transform: uppercase; margin-top: 4px; }
-  .pm-small { font-size: 11px; color: #6b7280; }
-  #pm-sel-list { font-size: 11px; font-family: monospace; color: #94a3b8; min-height: 20px;
-                 max-height: 90px; overflow-y: auto; white-space: pre; }
-  #pm-sel-count { font-size: 11px; color: #6b7280; font-style: italic; }
-  .pm-hr { border: none; border-top: 1px solid #1f2937; margin: 6px 0; }
-  #pm-patterns-list { display: flex; flex-direction: column; gap: 3px; max-height: 160px; overflow-y: auto; }
-  .pm-pat-row { display: flex; align-items: center; gap: 6px; }
-  .pm-pat-row input[type=checkbox] { accent-color: #22c55e; cursor: pointer; }
-  .pm-pat-row label { font-size: 12px; color: #22c55e; cursor: pointer; }
-  .pm-input { width: 100%; box-sizing: border-box; background: #1f2937; border: 1px solid #374151;
-              color: #e2e8f0; font-size: 12px; padding: 5px 8px; border-radius: 5px;
-              outline: none; font-family: monospace; }
-  .pm-input:focus { border-color: #6366f1; }
-  .pm-textarea { resize: vertical; min-height: 40px; }
-  #pm-cat-btns { display: flex; gap: 6px; }
-  .pm-cat-btn { flex: 1; padding: 5px 0; border: 2px solid transparent; border-radius: 5px;
-                font-size: 12px; font-weight: 600; cursor: pointer; background: #1f2937; color: #9ca3af; }
-  .pm-cat-btn[data-cat=reject].active { background: #7f1d1d; border-color: #ef4444; color: #fca5a5; }
-  .pm-cat-btn[data-cat=accept].active { background: #14532d; border-color: #22c55e; color: #86efac; }
-  .pm-cat-btn:hover { background: #374151; }
-  #pm-action-btns { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-  .pm-btn-submit { background: #3b82f6; border: none; color: #fff; font-size: 13px; font-weight: 700;
-                   padding: 8px; border-radius: 6px; cursor: pointer; }
-  .pm-btn-submit:hover { background: #2563eb; }
-  .pm-btn-clear  { background: #1f2937; border: 1px solid #374151; color: #9ca3af; font-size: 11px;
-                   padding: 4px 8px; border-radius: 5px; cursor: pointer; }
-  .pm-btn-clear:hover { background: #374151; }
-  .pm-btn-danger { background: #7f1d1d; border: 1px solid #ef4444; color: #fca5a5; font-size: 12px;
-                   font-weight: 700; padding: 6px; border-radius: 5px; cursor: pointer; }
-  .pm-btn-danger:hover { background: #dc2626; color: #fff; }
-
-  /* Label modal — interactive signal labelling popup */
-  #label-modal { display: none; position: fixed; inset: 0; z-index: 950;
-                 background: rgba(0,0,0,.92); align-items: center; justify-content: center;
-                 padding: 16px; }
-  #label-modal.open { display: flex; }
-  #label-modal-card { background: #1a1d27; border: 1px solid #2d3147; border-radius: 12px;
-                      padding: 16px; width: 96vw; height: 94vh;
-                      display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
-  #label-modal-header { display: flex; justify-content: space-between;
-                        font-size: 12px; color: #6b7280; font-family: 'Consolas', monospace;
-                        flex-shrink: 0; }
-  #label-modal-btns { display: flex; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
-  #label-modal-plot { width: 100%; flex: 1; min-height: 0; }
-  #label-modal-context { font-size: 12px; color: #94a3b8; flex-shrink: 0; }
-  .lbl-btn { padding: 10px 22px; border: none; border-radius: 6px; cursor: pointer;
-             font-size: 14px; font-weight: 600; transition: transform .1s, box-shadow .1s; }
-  .lbl-btn:hover { transform: scale(1.04); box-shadow: 0 0 10px rgba(0,0,0,.4); }
-  .lbl-btn:active { transform: scale(.97); }
+  /* Plot-modal body: full-width chart */
+  #plot-modal-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+  #plot-modal-chart { flex: 1; min-height: 0; }
 
   /* Markdown rendering */
   .msg.assistant h1,.msg.assistant h2,.msg.assistant h3 {
@@ -399,39 +344,10 @@ HTML = """<!DOCTYPE html>
   <div id="plot-modal-card">
     <div id="plot-modal-header">
       <span id="plot-modal-title"></span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span id="pm-trial-status" style="font-size:11px;color:#6b7280;font-family:monospace"></span>
-        <button id="plot-modal-close" onclick="closePlotModal()">✕</button>
-      </div>
+      <button id="plot-modal-close" onclick="closePlotModal()">✕</button>
     </div>
     <div id="plot-modal-body">
       <div id="plot-modal-chart"></div>
-      <div id="pm-divider" title="Drag to resize"></div>
-      <!-- Right labeling panel (mirrors trial_view_gui side panel) -->
-      <div id="pm-panel">
-        <div class="pm-section-lbl">Selected Channels</div>
-        <div id="pm-sel-list"></div>
-        <div id="pm-sel-count">Click a trace to select</div>
-        <button class="pm-btn-clear" onclick="pmClearSelection()">Clear Selection</button>
-        <hr class="pm-hr">
-        <div class="pm-section-lbl">Patterns</div>
-        <div id="pm-patterns-list"></div>
-        <div class="pm-small" style="margin-top:4px">New (;-sep):</div>
-        <input id="pm-new-pat" class="pm-input" type="text" placeholder="spike; artifact">
-        <hr class="pm-hr">
-        <div class="pm-section-lbl">Category</div>
-        <div id="pm-cat-btns">
-          <button class="pm-cat-btn active" data-cat="reject" onclick="pmSetCategory('reject')">Reject</button>
-          <button class="pm-cat-btn" data-cat="accept" onclick="pmSetCategory('accept')">Accept</button>
-        </div>
-        <hr class="pm-hr">
-        <div class="pm-small">Description (optional):</div>
-        <textarea id="pm-desc" class="pm-input pm-textarea"></textarea>
-        <div id="pm-action-btns">
-          <button class="pm-btn-submit" onclick="pmSubmit()">Submit</button>
-          <button class="pm-btn-danger" onclick="pmMarkAllBad()">Mark ALL Bad (X)</button>
-        </div>
-      </div>
     </div>
     <!-- Feedback bar for ask_user questions -->
     <div id="plot-modal-feedback">
@@ -449,17 +365,6 @@ HTML = """<!DOCTYPE html>
   </div>
 </div>
 
-<div id="label-modal">
-  <div id="label-modal-card">
-    <div id="label-modal-header">
-      <span id="label-modal-progress"></span>
-      <span id="label-modal-id"></span>
-    </div>
-    <div id="label-modal-context"></div>
-    <div id="label-modal-btns"></div>
-    <div id="label-modal-plot"></div>
-  </div>
-</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -707,13 +612,6 @@ function handleEvent(ev) {
       document.getElementById('activity-log').scrollTop = 99999;
     }
 
-  } else if (ev.type === 'labels_saved') {
-    // Server confirmed label save — update local state with authoritative sets
-    pmState.rejectedChannels = new Set(ev.rejected || []);
-    pmState.acceptedChannels = new Set(ev.accepted || []);
-    pmRestyleSelected();
-    pmUpdateSelectionDisplay();
-
   } else if (ev.type === 'show_plot') {
     clearThinkingEntry();
     logPlotToActivity(ev);
@@ -724,9 +622,10 @@ function handleEvent(ev) {
     logStaticPlotToActivity(ev);
     appendStaticPlotToChat(ev);
 
-  } else if (ev.type === 'label_signal') {
+  } else if (ev.type === 'recall') {
     clearThinkingEntry();
-    showLabelModal(ev);
+    logRecallToActivity(ev);
+    setStatus('thinking', 'Recalling from memory...');
 
   } else if (ev.type === 'ask_user') {
     clearThinkingEntry();
@@ -755,19 +654,7 @@ function clearThinkingEntry() {
   if (thinkingEntry) { thinkingEntry.remove(); thinkingEntry = null; }
 }
 
-// ── Plot-modal labeling state ────────────────────────────────────────────────
-let pmState = {
-  trialIdx: null, project: null,
-  chTraceMap: {},        // ch_idx (int) -> trace index in fig.data
-  traceRevMap: {},       // trace_idx (int) -> ch_idx (reverse lookup)
-  traceOrigColors: {},   // trace_idx -> original hex color
-  traceOrigWidths: {},   // trace_idx -> original line.width
-  traceOrigOpacity: {},  // trace_idx -> original opacity
-  selectedChannels: new Set(),
-  rejectedChannels: new Set(),
-  acceptedChannels: new Set(),
-  category: 'reject',
-};
+// ── Plot modal ──────────────────────────────────────────────────────────────
 // Pending ask_user question to show when modal finishes opening
 let pmPendingQuestion = null;
 
@@ -775,70 +662,19 @@ function showPlotModal(ev) {
   document.getElementById('plot-modal-title').textContent = ev.title || 'Plot';
   const fig = JSON.parse(ev.plot_json);
 
-  // Reset state
-  pmState.chTraceMap = {};
-  pmState.traceRevMap = {};
-  pmState.traceOrigColors = {};
-  pmState.traceOrigWidths = {};
-  pmState.traceOrigOpacity = {};
-  pmState.selectedChannels = new Set();
-  pmState.rejectedChannels = new Set();
-  pmState.acceptedChannels = new Set();
-  pmState.category = 'reject';
-  pmState.trialIdx = ev.trial_idx !== undefined ? ev.trial_idx : null;
-  pmState.project = currentProject;
-
-  // Strip layout artifacts that waste space when panel is present
-  if (fig.layout) {
-    fig.layout.showlegend = false;
-    // Remove the large right margin used for standalone channel-label annotations
-    if (fig.layout.margin) fig.layout.margin.r = 8;
-    else fig.layout.margin = {l: 60, r: 8, t: 50, b: 50};
-    // Remove right-side channel label annotations (x≥0.95, xanchor=left, xref=paper)
-    if (fig.layout.annotations) {
-      fig.layout.annotations = fig.layout.annotations.filter(a =>
-        !(a.xref === 'paper' && a.xanchor === 'left' && a.x >= 0.95));
-    }
-    // Box-select as default drag (drag a vertical band to multi-select traces)
-    fig.layout.dragmode = 'select';
-    fig.layout.selectdirection = 'any';
-  }
-
-  // Build ch->trace map from customdata ([ch_idx, region, ch_name, trial_idx])
-  fig.data.forEach((trace, i) => {
-    if (trace.customdata && trace.customdata.length > 0) {
-      const cd = Array.isArray(trace.customdata[0]) ? trace.customdata[0] : trace.customdata;
-      const chCandidate = Array.isArray(cd) ? cd[0] : null;
-      if (chCandidate !== null && typeof chCandidate === 'number') {
-        pmState.chTraceMap[chCandidate] = i;
-        pmState.traceRevMap[i] = chCandidate;
-        pmState.traceOrigColors[i] = (trace.line && trace.line.color) ? trace.line.color : '#888888';
-        pmState.traceOrigWidths[i] = (trace.line && trace.line.width) ? trace.line.width : 0.6;
-        pmState.traceOrigOpacity[i] = trace.opacity !== undefined ? trace.opacity : 1.0;
-      }
-    }
-  });
-
-  pmSetCategory('reject');
-  pmLoadPatterns();
-  pmUpdateSelectionDisplay();
-  document.getElementById('pm-trial-status').textContent = '';
-
   Plotly.newPlot('plot-modal-chart', fig.data, fig.layout, {
     responsive: true,
     displayModeBar: true,
-    modeBarButtonsToRemove: ['lasso2d'],
+    modeBarButtonsToRemove: ['select2d', 'lasso2d'],
     toImageButtonOptions: {format: 'png', filename: (ev.title || 'plot').replace(/\s+/g, '_')},
   });
-  pmBindEvents();
 
   document.getElementById('plot-modal').classList.add('open');
 
   // Show any buffered ask_user question
   if (pmPendingQuestion) {
-    const fb = document.getElementById('plot-modal-feedback');
     document.getElementById('plot-modal-question').textContent = pmPendingQuestion;
-    fb.classList.add('visible');
+    document.getElementById('plot-modal-feedback').classList.add('visible');
     pmPendingQuestion = null;
   }
 }
@@ -871,248 +707,6 @@ function submitPlotFeedback(fixedValue) {
 document.getElementById('plot-modal').addEventListener('click', function(e) {
   if (e.target === this) closePlotModal();
 });
-
-// ── Plot-modal event binding (re-called after every Plotly.react) ────────────
-
-function pmBindEvents() {
-  const d = document.getElementById('plot-modal-chart');
-  if (!d) return;
-  // Plotly uses a custom EventEmitter; removeAllListeners clears previous bindings
-  ['plotly_click','plotly_selected','plotly_deselect'].forEach(ev => {
-    try { d.removeAllListeners(ev); } catch(e) {}
-  });
-  d.on('plotly_click',    pmHandleClick);
-  d.on('plotly_selected', pmHandleSelected);
-  d.on('plotly_deselect', pmHandleDeselect);
-}
-
-function pmHandleSelected(eventData) {
-  // Box-select: all traces whose points were inside the selection box
-  if (!eventData || !eventData.points) return;
-  const curves = new Set(eventData.points.map(p => p.curveNumber));
-  curves.forEach(curveNum => {
-    const ch = pmState.traceRevMap[curveNum];
-    if (ch !== undefined) pmState.selectedChannels.add(ch);
-  });
-  pmRestyleSelected();
-  pmUpdateSelectionDisplay();
-}
-
-function pmHandleDeselect() {
-  pmState.selectedChannels.clear();
-  pmRestyleSelected();
-  pmUpdateSelectionDisplay();
-}
-
-// ── Plot-modal labeling panel functions ──────────────────────────────────────
-
-async function pmLoadPatterns() {
-  if (!pmState.project) return;
-  try {
-    const resp = await fetch(`/api/projects/${pmState.project}/patterns`);
-    const patterns = await resp.json();
-    const list = document.getElementById('pm-patterns-list');
-    list.innerHTML = '';
-    patterns.forEach(pat => {
-      const row = document.createElement('div');
-      row.className = 'pm-pat-row';
-      const label = pat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      row.innerHTML = `<input type="checkbox" data-pat="${pat}" id="pmpat_${pat}">
-                       <label for="pmpat_${pat}">${label}</label>`;
-      list.appendChild(row);
-    });
-  } catch(e) { console.warn('Could not load patterns:', e); }
-}
-
-function pmSetCategory(cat) {
-  pmState.category = cat;
-  document.querySelectorAll('.pm-cat-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.cat === cat);
-  });
-}
-
-function pmHandleClick(data) {
-  if (!data.points || data.points.length === 0) return;
-  const pt = data.points[0];
-
-  // Primary: curveNumber → reverse map to ch_idx
-  let chIdx = pmState.traceRevMap[pt.curveNumber];
-
-  // Fallback: customdata
-  if (chIdx === undefined && pt.customdata) {
-    const cd = pt.customdata;
-    const first = Array.isArray(cd) ? (Array.isArray(cd[0]) ? cd[0][0] : cd[0]) : cd;
-    if (typeof first === 'number') chIdx = first;
-  }
-
-  if (chIdx === undefined || chIdx === null) return;
-
-  if (pmState.selectedChannels.has(chIdx)) {
-    pmState.selectedChannels.delete(chIdx);
-  } else {
-    pmState.selectedChannels.add(chIdx);
-  }
-  pmRestyleSelected();
-  pmUpdateSelectionDisplay();
-}
-
-function pmRestyleSelected() {
-  const chartDiv = document.getElementById('plot-modal-chart');
-  if (!chartDiv.data || !chartDiv.data.length) return;
-
-  // Clone figure data and update only channel traces; use Plotly.react for reliability
-  const newData = chartDiv.data.map((trace, i) => {
-    const ch = pmState.traceRevMap[i];
-    if (ch === undefined) return trace; // legend dummy or non-channel trace
-
-    let color, width, opacity;
-    if (pmState.selectedChannels.has(ch)) {
-      color = '#ffffff'; width = 2.5; opacity = 1.0;
-    } else if (pmState.rejectedChannels.has(ch)) {
-      color = '#ef4444'; width = 1.0; opacity = 1.0;
-    } else if (pmState.acceptedChannels.has(ch)) {
-      color = '#3a3a3a'; width = 0.4; opacity = 0.4;
-    } else {
-      color = pmState.traceOrigColors[i] || '#888888';
-      width = pmState.traceOrigWidths[i] || 0.6;
-      opacity = pmState.traceOrigOpacity[i] !== undefined ? pmState.traceOrigOpacity[i] : 1.0;
-    }
-    return {...trace, line: {...(trace.line || {}), color, width}, opacity};
-  });
-
-  Plotly.react('plot-modal-chart', newData, chartDiv.layout);
-  // Plotly.react can detach event listeners — re-bind immediately
-  pmBindEvents();
-}
-
-function pmUpdateSelectionDisplay() {
-  const list = document.getElementById('pm-sel-list');
-  const count = document.getElementById('pm-sel-count');
-  const n = pmState.selectedChannels.size;
-  if (n === 0) {
-    list.textContent = '';
-    count.textContent = 'Click a trace to select';
-  } else {
-    list.textContent = Array.from(pmState.selectedChannels).sort((a,b)=>a-b)
-      .map(ch => `ch${String(ch).padStart(2,'0')}`).join('  ');
-    count.textContent = `${n} channel${n>1?'s':''} selected`;
-  }
-  // Update trial status (rej/acc/unlabeled)
-  const nRej = pmState.rejectedChannels.size;
-  const nAcc = pmState.acceptedChannels.size;
-  document.getElementById('pm-trial-status').textContent =
-    nRej + nAcc > 0 ? `${nRej} bad / ${nAcc} ok` : '';
-}
-
-function pmClearSelection() {
-  pmState.selectedChannels.clear();
-  pmRestyleSelected();
-  pmUpdateSelectionDisplay();
-}
-
-function pmSubmit() {
-  if (pmState.selectedChannels.size === 0) {
-    alert('Click traces on the chart to select channels first.'); return;
-  }
-  const newPatRaw = document.getElementById('pm-new-pat').value.trim();
-  let patterns = Array.from(document.querySelectorAll('#pm-patterns-list input:checked'))
-    .map(cb => cb.dataset.pat);
-  if (newPatRaw) {
-    newPatRaw.replace(/,/g, ';').split(';').forEach(t => {
-      const p = t.trim().toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
-      if (p) patterns.push(p);
-    });
-  }
-  if (patterns.length === 0 && pmState.category !== 'accept') {
-    alert('Select at least one pattern, or switch category to Accept.'); return;
-  }
-  if (patterns.length === 0) patterns = ['physiology'];
-  const desc = document.getElementById('pm-desc').value.trim();
-  const channels = Array.from(pmState.selectedChannels);
-  ws.send(JSON.stringify({
-    type: 'label_channels',
-    trial_idx: pmState.trialIdx,
-    channels, patterns,
-    category: pmState.category,
-    description: desc,
-  }));
-  // Optimistic local update
-  channels.forEach(ch => {
-    if (pmState.category === 'reject') {
-      pmState.rejectedChannels.add(ch); pmState.acceptedChannels.delete(ch);
-    } else {
-      pmState.acceptedChannels.add(ch); pmState.rejectedChannels.delete(ch);
-    }
-  });
-  pmState.selectedChannels.clear();
-  // Add new patterns to panel
-  if (newPatRaw) pmLoadPatterns();
-  document.getElementById('pm-new-pat').value = '';
-  document.getElementById('pm-desc').value = '';
-  document.querySelectorAll('#pm-patterns-list input').forEach(cb => cb.checked = false);
-  pmRestyleSelected();
-  pmUpdateSelectionDisplay();
-}
-
-function pmMarkAllBad() {
-  if (!confirm('Mark ALL channels in this trial as bad?')) return;
-  const channels = Object.keys(pmState.chTraceMap).map(Number);
-  ws.send(JSON.stringify({
-    type: 'label_channels',
-    trial_idx: pmState.trialIdx,
-    channels,
-    patterns: ['trial_wide_artifact'],
-    category: 'reject',
-    description: 'Marked all channels bad for this trial',
-  }));
-  channels.forEach(ch => {
-    pmState.rejectedChannels.add(ch); pmState.acceptedChannels.delete(ch);
-  });
-  pmState.selectedChannels.clear();
-  pmRestyleSelected();
-  pmUpdateSelectionDisplay();
-}
-
-function showLabelModal(ev) {
-  document.getElementById('label-modal-progress').textContent = ev.progress || '';
-  document.getElementById('label-modal-id').textContent = ev.signal_id || '';
-  document.getElementById('label-modal-context').textContent = ev.context_text || '';
-
-  // Render interactive Plotly chart
-  const fig = JSON.parse(ev.plot_json);
-  Plotly.newPlot('label-modal-plot', fig.data, fig.layout, {
-    responsive: true,
-    displayModeBar: true,
-    modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d'],
-    toImageButtonOptions: {format: 'png', filename: ev.signal_id || 'signal'},
-  });
-
-  const palette = {
-    clean: {bg: '#22c55e', fg: '#000'},
-    artifact: {bg: '#ef4444', fg: '#fff'},
-    noise: {bg: '#f59e0b', fg: '#000'},
-    unsure: {bg: '#6366f1', fg: '#fff'},
-    skip: {bg: '#374151', fg: '#9ca3af'},
-  };
-  const btns = document.getElementById('label-modal-btns');
-  btns.innerHTML = '';
-  const options = ev.options || ['clean', 'artifact', 'noise', 'unsure', 'skip'];
-  for (const opt of options) {
-    const c = palette[opt] || {bg: '#4f46e5', fg: '#fff'};
-    const btn = document.createElement('button');
-    btn.className = 'lbl-btn';
-    btn.style.background = c.bg;
-    btn.style.color = c.fg;
-    btn.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
-    btn.onclick = () => {
-      document.getElementById('label-modal').classList.remove('open');
-      appendMessage('user', opt);
-      ws.send(JSON.stringify({type: 'user_answer', content: opt}));
-    };
-    btns.appendChild(btn);
-  }
-  document.getElementById('label-modal').classList.add('open');
-}
 
 // ── Formatting helpers ─────────────────────────────────────────────────────────
 function formatInput(tool, inp) {
@@ -1233,6 +827,73 @@ function appendStaticPlotToChat(ev) {
   messages.scrollTop = messages.scrollHeight;
 }
 
+function logRecallToActivity(ev) {
+  const log = document.getElementById('activity-log');
+  const div = document.createElement('div');
+  div.className = 'activity-item recall';
+  const objective = ev.objective || '';
+  const queries = ev.queries || [];
+  const results = ev.results || [];
+  const count = ev.result_count || 0;
+
+  // Count by source
+  const projCount = results.filter(r => r.source === 'project').length;
+  const globCount = results.filter(r => r.source === 'global').length;
+
+  let html = '<div class="label">🧠 Recall: ' + escHtml(objective) + '</div>';
+
+  // Show each query and its matching results
+  for (const q of queries) {
+    html += '<div class="detail" style="margin-left:12px;margin-top:4px;font-weight:600;">Query: "' + escHtml(q) + '"</div>';
+    // Show results that match this query (we show all results under queries since they're mixed)
+  }
+
+  // Show results grouped by source
+  if (results.length > 0) {
+    const projectResults = results.filter(r => r.source === 'project');
+    const globalResults = results.filter(r => r.source === 'global');
+
+    if (projectResults.length > 0) {
+      html += '<div class="detail" style="margin-left:8px;margin-top:6px;color:#7ee787;font-weight:600;">Project Memory</div>';
+      for (const r of projectResults) {
+        const ts = r.timestamp ? r.timestamp.slice(0, 10) : '';
+        const badge = r.memory_type || 'unknown';
+        const kw = (r.keywords || []).join(', ');
+        let line = '<span style="color:#79c0ff;">[' + escHtml(badge) + ']</span> ';
+        line += escHtml((r.content || '').slice(0, 200));
+        if (ts) line += ' <span style="color:#8b949e;">(' + escHtml(ts) + ')</span>';
+        if (kw) line += ' <span style="color:#8b949e;">[' + escHtml(kw) + ']</span>';
+        html += '<div class="detail" style="margin-left:16px;font-size:0.85em;">' + line + '</div>';
+      }
+    }
+
+    if (globalResults.length > 0) {
+      html += '<div class="detail" style="margin-left:8px;margin-top:6px;color:#d2a8ff;font-weight:600;">Global Memory</div>';
+      for (const r of globalResults) {
+        const ts = r.timestamp ? r.timestamp.slice(0, 10) : '';
+        const badge = r.memory_type || 'unknown';
+        const kw = (r.keywords || []).join(', ');
+        let line = '<span style="color:#79c0ff;">[' + escHtml(badge) + ']</span> ';
+        line += escHtml((r.content || '').slice(0, 200));
+        if (ts) line += ' <span style="color:#8b949e;">(' + escHtml(ts) + ')</span>';
+        if (kw) line += ' <span style="color:#8b949e;">[' + escHtml(kw) + ']</span>';
+        html += '<div class="detail" style="margin-left:16px;font-size:0.85em;">' + line + '</div>';
+      }
+    }
+  }
+
+  // Summary line
+  let summary = count + ' memories recalled';
+  if (projCount > 0 || globCount > 0) {
+    summary += ' (' + projCount + ' project, ' + globCount + ' global)';
+  }
+  html += '<div class="detail" style="margin-top:4px;color:#8b949e;font-style:italic;">' + summary + '</div>';
+
+  div.innerHTML = html;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
 function logSubActivity(type, subagent, tool, detail, imgPaths) {
   const log = document.getElementById('activity-log');
   const div = document.createElement('div');
@@ -1268,9 +929,9 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Markdown renderer — delegates to marked.js (loaded from CDN)
+// Markdown renderer — delegates to marked.js + DOMPurify for XSS safety
 function renderMarkdown(md) {
-  return marked.parse(md);
+  return DOMPurify.sanitize(marked.parse(md));
 }
 
 // ── Send message ───────────────────────────────────────────────────────────────
@@ -1305,38 +966,6 @@ document.getElementById('send-btn').addEventListener('click', sendMessage);
 document.getElementById('user-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
-
-// ── Draggable divider between chart and panel ────────────────────────────────
-(function() {
-  const divider = document.getElementById('pm-divider');
-  let dragging = false, startX = 0, startPanelW = 0;
-  divider.addEventListener('mousedown', e => {
-    dragging = true;
-    startX = e.clientX;
-    const panel = document.getElementById('pm-panel');
-    startPanelW = panel.getBoundingClientRect().width;
-    divider.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const delta = startX - e.clientX;  // dragging left = wider panel
-    const newW = Math.max(200, Math.min(600, startPanelW + delta));
-    document.getElementById('pm-panel').style.width = newW + 'px';
-  });
-  document.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
-    divider.classList.remove('dragging');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    // Trigger Plotly resize so chart fills the new width
-    Plotly.Plots && Plotly.Plots.resize && Plotly.Plots.resize('plot-modal-chart');
-    window.dispatchEvent(new Event('resize'));
-  });
-})();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
@@ -1519,7 +1148,14 @@ async def websocket_endpoint(ws: WebSocket):
 
         while True:
             data = await ws.receive_text()
-            msg = json.loads(data)
+            try:
+                msg = json.loads(data)
+            except json.JSONDecodeError:
+                await ws.send_text(json.dumps({"type": "error", "message": "Invalid JSON received"}))
+                continue
+            if msg.get("type") == "user_answer":
+                # Answer arrived while no orchestrator task is running — ignore gracefully
+                continue
             if msg.get("type") != "user_message":
                 continue
 
@@ -1544,7 +1180,10 @@ async def websocket_endpoint(ws: WebSocket):
                 while not orch_task.done():
                     try:
                         raw = await asyncio.wait_for(ws.receive_text(), timeout=0.05)
-                        inner = json.loads(raw)
+                        try:
+                            inner = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
                         if inner.get("type") == "user_answer":
                             await answer_queue.put(inner["content"])
                         elif inner.get("type") == "label_channels":
@@ -1592,4 +1231,10 @@ async def websocket_endpoint(ws: WebSocket):
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning("End-of-session reflection failed: %s", e)
+        # Close memory backend HTTP client to prevent connection leaks
+        if memory_backend is not None and hasattr(memory_backend, "close"):
+            try:
+                await memory_backend.close()
+            except Exception:
+                pass
         manager.disconnect(ws)

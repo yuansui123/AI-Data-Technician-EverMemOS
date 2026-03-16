@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-_DEFAULT_RETRIEVE_METHOD = "hybrid"
+_DEFAULT_RETRIEVE_METHOD = "keyword"
 _DEFAULT_TOP_K = 10
 _SEARCH_TIMEOUT = 30.0
 _STORE_TIMEOUT = 60.0
@@ -208,7 +208,16 @@ class EverMemOSBackend(MemoryBackend):
             top_k=15,
         )
 
-    async def retrieve(self, query: str, top_k: int = 5) -> str:
+    # All memory types supported by EverMemOS
+    _ALL_MEMORY_TYPES = [
+        "episodic_memory", "profile", "semantic_knowledge",
+        "basic_facts", "core_memories",
+    ]
+
+    async def retrieve(
+        self, query: str, top_k: int = 5,
+        memory_types: list[str] | None = None,
+    ) -> str:
         """Semantic search over stored memories.
 
         Returns a formatted string of the most relevant memories,
@@ -216,12 +225,9 @@ class EverMemOSBackend(MemoryBackend):
         """
         await self.ensure_conversation_meta()
 
-        # Build search request
-        # Cloud only supports episodic_memory + profile; local also supports event_log
-        memory_types = (
-            ["episodic_memory", "profile"] if self.is_cloud
-            else ["episodic_memory", "event_log"]
-        )
+        if memory_types is None:
+            memory_types = self._ALL_MEMORY_TYPES
+
         search_body: dict[str, Any] = {
             "query": query,
             "group_ids": [self.group_id],
@@ -235,11 +241,10 @@ class EverMemOSBackend(MemoryBackend):
         if self.is_cloud:
             result = await self._get("/memories/search", json=search_body, timeout=_SEARCH_TIMEOUT)
         else:
-            # Local open-source API — flatten for query params
             params = {
                 "query": query,
                 "group_id": self.group_id,
-                "memory_types": "episodic_memory,event_log",
+                "memory_types": ",".join(memory_types),
                 "retrieve_method": _DEFAULT_RETRIEVE_METHOD,
                 "top_k": str(top_k),
             }
@@ -250,6 +255,92 @@ class EverMemOSBackend(MemoryBackend):
             return ""
 
         return self._format_search_results(result)
+
+    async def retrieve_detailed(
+        self, query: str, top_k: int = 8,
+        memory_types: list[str] | None = None,
+    ) -> list[dict]:
+        """Retrieve memories with full metadata — used by the recall tool.
+
+        Returns a list of dicts with content, memory_type, timestamp,
+        keywords, group_id, and user_id for each result.
+        """
+        await self.ensure_conversation_meta()
+
+        if memory_types is None:
+            memory_types = self._ALL_MEMORY_TYPES
+
+        search_body: dict[str, Any] = {
+            "query": query,
+            "group_ids": [self.group_id],
+            "memory_types": memory_types,
+            "retrieve_method": _DEFAULT_RETRIEVE_METHOD,
+            "top_k": top_k,
+            "include_metadata": True,
+        }
+
+        if self.is_cloud:
+            result = await self._get("/memories/search", json=search_body, timeout=_SEARCH_TIMEOUT)
+        else:
+            params = {
+                "query": query,
+                "group_id": self.group_id,
+                "memory_types": ",".join(memory_types),
+                "retrieve_method": _DEFAULT_RETRIEVE_METHOD,
+                "top_k": str(top_k),
+            }
+            result = await self._get("/memories/search", params=params, timeout=_SEARCH_TIMEOUT)
+
+        if result.get("status") != "ok":
+            logger.warning("EverMemOS search failed: %s", result.get("message", ""))
+            return []
+
+        return self._extract_detailed_results(result)
+
+    @staticmethod
+    def _extract_detailed_results(result: dict) -> list[dict]:
+        """Extract structured results with metadata for the recall tool."""
+        entries: list[dict] = []
+        res = result.get("result", {})
+
+        for mem in res.get("memories", []):
+            if isinstance(mem, dict) and "summary" in mem:
+                entries.append({
+                    "content": mem.get("summary", ""),
+                    "memory_type": mem.get("memory_type", "unknown"),
+                    "keywords": mem.get("keywords", []),
+                    "timestamp": mem.get("timestamp", ""),
+                    "group_id": mem.get("group_id", ""),
+                    "user_id": mem.get("user_id", ""),
+                })
+            elif isinstance(mem, dict):
+                for _gid, mems in mem.items():
+                    if isinstance(mems, list):
+                        for m in mems:
+                            content = m.get("content", m.get("summary", m.get("text", "")))
+                            if content:
+                                entries.append({
+                                    "content": content.strip(),
+                                    "memory_type": m.get("memory_type", "unknown"),
+                                    "keywords": m.get("keywords", []),
+                                    "timestamp": m.get("timestamp", m.get("created_at", "")),
+                                    "group_id": _gid,
+                                    "user_id": m.get("user_id", ""),
+                                })
+
+        for profile in res.get("profiles", []):
+            desc = profile.get("description", "")
+            if desc:
+                entries.append({
+                    "content": desc.strip(),
+                    "memory_type": "profile",
+                    "keywords": [],
+                    "timestamp": profile.get("timestamp", ""),
+                    "group_id": profile.get("group_id", ""),
+                    "user_id": profile.get("user_id", ""),
+                })
+
+        return entries
 
     # ── Result formatting ─────────────────────────────────────────────────────
 
@@ -380,3 +471,9 @@ class EverMemOSBackend(MemoryBackend):
         """Close the underlying HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
+
+    async def __aenter__(self) -> "EverMemOSBackend":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.close()

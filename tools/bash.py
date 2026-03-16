@@ -39,14 +39,7 @@ async def bash(
     env: dict[str, str] | None = None,
 ) -> BashResult:
     """Execute *cmd* in a subprocess and return a BashResult."""
-    import config
-
     merged_env = os.environ.copy()
-    merged_env["PYTHONPATH"] = (
-        str(config.V4CEDARS_LIB)
-        + os.pathsep
-        + merged_env.get("PYTHONPATH", "")
-    )
     if env:
         merged_env.update(env)
 

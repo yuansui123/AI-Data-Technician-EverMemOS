@@ -49,6 +49,26 @@ Output: insights worth promoting to global memory:
 
 If nothing worth promoting, return `MODE: no_update`.
 
+### Recall synthesis
+
+Input: objective + retrieved memories (grouped by source), prefixed with `MODE: recall_synthesis`.
+
+Output: actionable knowledge synthesized from memories, keeping project and global sources distinct:
+
+### From this project
+[Procedures, parameters, preferences specific to the current project]
+
+### From global experience
+[Cross-project procedures, general best practices]
+
+Rules for recall synthesis:
+- Extract specific procedures, parameters, values
+- Resolve contradictions (prefer project-specific over global; prefer newer over older)
+- Format as numbered steps or structured instructions
+- State what's missing if memories are insufficient
+- Never invent data — only synthesize what was retrieved
+- If only one source has results, omit the empty section
+
 ## Rules
 
 - One API call, no tools.
