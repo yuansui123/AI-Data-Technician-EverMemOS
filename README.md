@@ -63,31 +63,19 @@ The browser-based UI connects via WebSocket for real-time streaming — no polli
 
 ## Memory System
 
-### Why Memory Matters
+Without persistent memory, every AI session starts from scratch. Memory transforms the system from a stateless tool into a self-improving research assistant that remembers how to load your data, which parameters work best, what artifacts look like, and what procedures you prefer.
 
-Without persistent memory, every AI session starts from scratch — re-exploring datasets, re-discovering patterns, re-learning preferences. A scientist who spent 20 minutes teaching the system that `nperseg=512` with 93% overlap produces the clearest spectrograms for their hippocampal recordings would have to repeat that lesson in every new session.
-
-Memory transforms the system from a stateless tool into a self-improving research assistant. After a few sessions, the system knows how to load your data, which parameters work best for your signals, what artifacts look like in your recordings, and what analysis procedures you prefer — and it applies all of this automatically.
-
-### What Gets Remembered
-
-- **Processing parameters** — Spectrogram settings (nperseg, overlap, colormap, normalization), filter configurations, visualization preferences. Stored with rationale and example code so the system can reproduce them exactly.
-- **Signal patterns** — Artifact signatures (muscle artifact, powerline contamination, electrode pop), pathological features (HFOs, spike-wave complexes), clean signal characteristics. Each pattern includes example signal IDs, channels, anatomy, and distinguishing features.
-- **Procedures** — Analysis workflows, data loading scripts, labeling protocols, classification pipelines. Stored as step-by-step instructions the system can follow in future sessions.
-- **Domain knowledge** — Terminology definitions, detection rules, feature engineering approaches, dataset-specific metadata. Built up through conversation with the scientist.
+What gets remembered: **processing parameters** (spectrogram settings, filter configs, with rationale and example code), **signal patterns** (artifact signatures, pathological features, with example signal IDs and anatomy), **procedures** (analysis workflows, labeling protocols), and **domain knowledge** (terminology, detection rules, dataset metadata).
 
 ### Three-Layer Architecture
 
-Memory is organized in three layers, each with a different scope and lifetime:
+| Layer | Scope | File Storage | EverMemOS Storage |
+|-------|-------|-------------|-------------------|
+| **Session** | Current conversation | `sessions/session_{id}.json` — every turn, tool call, result, and todo list. Saved after each turn. | Raw chat turns logged via `store_chat_turn()` for passive fact extraction. |
+| **Project** | Across sessions, one project | `project_memory.md` — structured markdown updated by the Think agent every 5 messages. Injected into the orchestrator's system prompt each turn. | Memories stored with project-scoped `group_id` (hash of project path). Classified as `episodic_memory` (findings, parameters, patterns) or `profile` (user preferences). Keyword-indexed for semantic retrieval. |
+| **Global** | Across all projects | `projects/_global/global_memory.md` — populated by end-of-session reflection. | Stored under `adt_global` group_id. Contains reusable procedures, user preferences, and cross-project insights. |
 
-**Layer 1 — Session Memory**
-Scope: Current conversation only. Stored as a JSON file (`sessions/session_{id}.json`) containing every chat turn, tool call, tool result, artifact reference, and the current todo list. The session is saved after every turn so nothing is lost if the connection drops. Context carry — a lightweight key-value store — lets the orchestrator pass small facts between tool calls without re-reading files.
-
-**Layer 2 — Project Memory**
-Scope: Across sessions within the same project. Maintained as `project_memory.md` — a structured markdown document that the Think agent updates every 5 user messages. Contains dataset descriptions (file paths, formats, column names, sampling rates), analysis findings, parameter choices, and pattern definitions. This file is injected into the orchestrator's system prompt at the start of every turn, giving the agent immediate access to everything learned in prior sessions. Because it's plain markdown, it's human-readable, editable, and git-trackable.
-
-**Layer 3 — Global Memory**
-Scope: Across all projects. Stored in `projects/_global/global_memory.md`. Populated by end-of-session reflection — the Think agent reviews the conversation and promotes three categories of knowledge: **reusable procedures** (analysis workflows that apply to any dataset), **user preferences** (formatting choices, communication style, tool preferences), and **cross-project insights** (patterns or techniques discovered in one dataset that generalize). Global memory is also injected into the orchestrator's context, so knowledge earned on one project transfers to the next.
+Project and global memory are both injected into the orchestrator's context at the start of every turn — the agent has full knowledge from prior sessions without needing to recall explicitly.
 
 ### Memory Lifecycle
 
@@ -95,67 +83,61 @@ Scope: Across all projects. Stored in `projects/_global/global_memory.md`. Popul
   User teaches something
          |
          v
-  Orchestrator calls `remember` ──────> Stored in project or global memory
-         |                                with tags for future retrieval
+  Orchestrator calls `remember` ──> File: written to project_memory.md
+         |                           EverMemOS: extracted into keyword-indexed
+         |                           episodic_memory with tags for retrieval
          v
-  Every 5 messages ───────────────────> Think agent auto-extracts findings
-         |                                into project_memory.md
+  Every 5 messages ────────────────> Think agent reviews recent turns,
+         |                           merges new findings into project_memory.md,
+         |                           prunes stale facts (≤500 words/section)
          v
-  Session ends ───────────────────────> Think agent reflects on full session
-         |                                Promotes procedures/preferences/insights
-         v                                to global memory
-  Next session starts ────────────────> project_memory.md + global_memory.md
-                                          injected into system prompt
-                                          Agent has full context from day one
+  Passive extraction ──────────────> EverMemOS receives raw chat turns,
+         |                           auto-extracts facts the agent didn't
+         |                           explicitly save (hybrid backend)
+         v
+  Session ends ────────────────────> Think agent reflects on full session.
+         |                           Promotes to global memory:
+         |                           • reusable procedures → global file + EverMemOS
+         |                           • user preferences → global file + EverMemOS
+         |                           • cross-project insights → global file + EverMemOS
+         v
+  Next session starts ─────────────> project_memory.md + global_memory.md
+         |                           loaded into system prompt.
+         v                           `recall` tool queries EverMemOS for
+  Agent recalls as needed             semantic search when deeper retrieval needed.
 ```
 
-### How Memory Helps Users
+### EverMemOS Integration
 
-**Session 1:** The scientist asks the system to plot a spectrogram. The system uses default parameters. The scientist says "the frequency bands are washed out — try nperseg=512 with 93% overlap and LogNorm." The system applies the changes, the scientist approves, and the system saves the parameters to memory with rationale and example code.
+[EverMemOS](https://github.com/nicholasgasior/evermemos) is an open-source persistent memory service for AI agents. It adds semantic understanding and intelligent retrieval on top of the file-based memory layer.
 
-**Session 2:** The scientist asks for a spectrogram of a different signal. The system recalls the previously optimized parameters from memory and applies them automatically — no re-teaching needed. The scientist can focus on the analysis, not the setup.
+**How it works:**
 
-**Session 5:** The scientist starts a new project with a different dataset. The system recalls from global memory that LogNorm spectrograms with high overlap work well for neural recordings, and applies similar settings as a starting point — transferring knowledge across projects.
+1. **Store.** When a memory is saved (`POST /memories`), EverMemOS processes the text, extracts discrete facts, and indexes them with keywords and timestamps. "Muscle artifact shows broadband power above 80 Hz in temporal channels" becomes a searchable entry tagged with `muscle artifact`, `broadband`, `80 Hz`, `temporal`.
 
-**Session 10:** The scientist asks the system to "check this signal for artifacts." The system recalls artifact definitions from memory — muscle artifact (broadband high-frequency power), powerline contamination (60 Hz harmonic peaks), electrode pop (sharp transients) — and runs detection using previously learned thresholds, without the scientist re-defining any of them.
+2. **Retrieve.** The `recall` tool sends natural language queries to `/memories/search`. EverMemOS finds conceptually related memories — not just exact keyword matches. Asking "how should I detect artifacts?" returns memories about thresholds, frequency characteristics, and anatomy-specific patterns. Results include full metadata (content, memory type, keywords, timestamp, group_id) for the Think agent to synthesize.
+
+3. **Scope.** Each project gets a deterministic `group_id` so memories never leak between projects. Global memory uses a special `adt_global` group_id.
+
+4. **Session init.** At session start, conversation metadata is registered — project name, participant roles (AI Data Technician / Researcher), and tags — so EverMemOS maintains context about who said what.
+
+**Memory types:** `episodic_memory` (findings, summaries, observations) and `profile` (plot preferences, channel selections, communication style).
+
+**Deployment:** Run locally via Docker (`docker run -p 1995:1995 ghcr.io/nicholasgasior/evermemos:latest`) or use the managed cloud service at `api.evermind.ai`. The system handles API differences automatically.
 
 ### Memory Backends
 
-Two storage backends are available, and they can be combined:
+| Backend | Writes to | Reads from | Best for |
+|---------|-----------|------------|----------|
+| **File** | `project_memory.md` | Full-text (entire document) | Simple setup, git-trackable |
+| **EverMemOS** | EverMemOS API | Semantic search | Intelligent retrieval at scale |
+| **Hybrid** (default) | Both simultaneously | EverMemOS with file fallback | Durability + semantic search |
 
-**File Backend** — Stores `project_memory.md` as plain markdown. Human-readable, git-trackable, works out of the box with no external dependencies. Retrieval is full-text (returns the entire document). Best for teams that want version-controlled memory alongside their code.
+The hybrid backend writes to the file first (synchronous, reliable), then to EverMemOS (best-effort). If EverMemOS is unreachable, the system falls back to file-based memory — it never crashes or loses data due to a backend outage.
 
-**EverMemOS Backend** — [EverMemOS](https://github.com/nicholasgasior/evermemos) is an open-source persistent memory service designed for AI agents. It goes beyond file storage by providing semantic understanding of what gets stored and intelligent retrieval of what's relevant.
+### Quality Control
 
-How it works with the AI Data Technician:
-
-- **Automatic memory extraction.** When the system sends a message to EverMemOS (via `POST /memories`), it doesn't just store the raw text. EverMemOS processes the message, extracts discrete facts, and indexes them with keywords, timestamps, and memory types. A single conversation turn about "muscle artifact shows broadband power above 80 Hz, especially in temporal channels" becomes a searchable memory entry with keywords like `muscle artifact`, `broadband`, `80 Hz`, `temporal`.
-
-- **Memory types.** Each extracted memory is classified into a type that determines how it's stored and retrieved:
-  - `episodic_memory` — Analytical findings, session summaries, labeling history, dataset observations. These are the core knowledge entries that accumulate over time.
-  - `profile` — User preferences like plot styles, preferred channel selections, communication style. Retrieved separately to personalize behavior.
-
-- **Project scoping via group IDs.** Each project gets a deterministic `group_id` (a hash of the project directory path). All memories for that project are tagged with its group_id, so searching within one project never returns results from another. Global (cross-project) memory uses a special `adt_global` group_id.
-
-- **Semantic retrieval.** When the `recall` tool fires, it sends a natural language query to EverMemOS's `/memories/search` endpoint. EverMemOS uses keyword matching to find conceptually related memories — not just exact string matches. Asking "how should I detect artifacts in hippocampal signals?" returns memories about artifact thresholds, frequency characteristics, and anatomy-specific patterns, even if those memories never used the word "detect." Results come back with full metadata (content, memory type, keywords, timestamp, group_id) so the Think agent can synthesize them intelligently.
-
-- **Conversation metadata.** At the start of each session, the system registers conversation metadata with EverMemOS — project name, participant roles (AI Data Technician as assistant, Researcher as user), and tags. This allows EverMemOS to maintain context about who said what and in which project.
-
-- **Chat turn logging.** Beyond explicit `remember` calls, the hybrid backend can log raw chat turns to EverMemOS via `store_chat_turn()`. This enables passive memory extraction — EverMemOS identifies important facts from natural conversation without the agent needing to explicitly decide what to save.
-
-- **Deployment options:**
-  - *Local (Docker):* `docker run -p 1995:1995 ghcr.io/nicholasgasior/evermemos:latest` — runs on your machine, data stays local, API at `http://localhost:1995/api/v1`.
-  - *Cloud:* Managed service at `api.evermind.ai` — no infrastructure to maintain, API key authentication. The system handles API differences between local and cloud automatically (query params vs. JSON body for search requests).
-
-- **Reliability.** The system uses async HTTP (httpx) with configurable timeouts (30s for search, 60s for storage) and graceful error handling. If EverMemOS is unreachable, the hybrid backend falls back to file-based memory — the system never crashes or loses data due to a backend outage.
-
-**Hybrid Backend (default)** — Writes to both file and EverMemOS simultaneously. Every `store()` call writes to `project_memory.md` first (synchronous, reliable), then to EverMemOS (best-effort, logs a warning on failure). For reads, the hybrid backend prefers EverMemOS (semantic search) and falls back to the file if EverMemOS is unavailable. This is the default configuration — you get git-trackable durability from the file backend plus semantic search from EverMemOS.
-
-### Memory Quality Control
-
-The memory gate (`orchestrator/memory_gate.py`) controls when and how project memory is updated. Rather than updating memory on every message (which would be noisy), it checks whether enough new information has accumulated since the last update (`MEMORY_UPDATE_INTERVAL * 2` turns). When triggered, it sends recent turns to the Think agent with the current memory document and instructions to merge new findings, prune stale facts, and keep each section under 500 words. The result: memory stays current but compact.
-
-The todo system adds a second quality layer — items cannot be marked as `done` or `failed` without evidence from an actual tool result. This prevents the agent from claiming completion based on reasoning alone, ensuring that memory entries are grounded in real observations.
+The **memory gate** controls update frequency — rather than updating on every message, it waits until enough new information accumulates (configurable via `MEMORY_UPDATE_INTERVAL`), then sends recent turns to the Think agent to merge findings, prune stale facts, and keep each section under 500 words. The **todo system** requires evidence from actual tool results to mark items done — no reasoning-only completions — ensuring memory entries are grounded in real observations.
 
 ---
 
