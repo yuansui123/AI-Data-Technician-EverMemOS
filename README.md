@@ -1,8 +1,16 @@
+<p align="center">
+  <img src="image/icon.png" alt="AI Data Technician" width="200">
+</p>
+
 # AI Data Technician + EverMemOS
 
 An agentic AI research assistant for exploring, analyzing, and building classification rules on datasets — powered by Claude's tool-use architecture, **EverMemOS** for persistent semantic memory, interactive visualization, and a real-time web interface.
 
 Designed for researchers working with biomedical signals (EEG, neural time-series) or any structured data who want AI-assisted pattern discovery — without writing boilerplate code.
+
+<p align="center">
+  <img src="image/ui.png" alt="AI Data Technician Web UI" width="800">
+</p>
 
 ---
 
