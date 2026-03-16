@@ -125,9 +125,31 @@ Two storage backends are available, and they can be combined:
 
 **File Backend** — Stores `project_memory.md` as plain markdown. Human-readable, git-trackable, works out of the box with no external dependencies. Retrieval is full-text (returns the entire document). Best for teams that want version-controlled memory alongside their code.
 
-**EverMemOS Backend** — A persistent semantic memory service with hybrid retrieval (keyword matching + embedding-based similarity search). Memories are stored with metadata (timestamps, tags, memory types, group IDs) and retrieved using natural language queries that find conceptually related knowledge, not just keyword matches. Available as a [local Docker container](https://github.com/nicholasgasior/evermemos) or managed cloud service.
+**EverMemOS Backend** — [EverMemOS](https://github.com/nicholasgasior/evermemos) is an open-source persistent memory service designed for AI agents. It goes beyond file storage by providing semantic understanding of what gets stored and intelligent retrieval of what's relevant.
 
-**Hybrid Backend** — Writes to both file and EverMemOS simultaneously. File provides durability and git-trackability; EverMemOS provides semantic search. This is the default configuration — you get the best of both backends.
+How it works with the AI Data Technician:
+
+- **Automatic memory extraction.** When the system sends a message to EverMemOS (via `POST /memories`), it doesn't just store the raw text. EverMemOS processes the message, extracts discrete facts, and indexes them with keywords, timestamps, and memory types. A single conversation turn about "muscle artifact shows broadband power above 80 Hz, especially in temporal channels" becomes a searchable memory entry with keywords like `muscle artifact`, `broadband`, `80 Hz`, `temporal`.
+
+- **Memory types.** Each extracted memory is classified into a type that determines how it's stored and retrieved:
+  - `episodic_memory` — Analytical findings, session summaries, labeling history, dataset observations. These are the core knowledge entries that accumulate over time.
+  - `profile` — User preferences like plot styles, preferred channel selections, communication style. Retrieved separately to personalize behavior.
+
+- **Project scoping via group IDs.** Each project gets a deterministic `group_id` (a hash of the project directory path). All memories for that project are tagged with its group_id, so searching within one project never returns results from another. Global (cross-project) memory uses a special `adt_global` group_id.
+
+- **Semantic retrieval.** When the `recall` tool fires, it sends a natural language query to EverMemOS's `/memories/search` endpoint. EverMemOS uses keyword matching to find conceptually related memories — not just exact string matches. Asking "how should I detect artifacts in hippocampal signals?" returns memories about artifact thresholds, frequency characteristics, and anatomy-specific patterns, even if those memories never used the word "detect." Results come back with full metadata (content, memory type, keywords, timestamp, group_id) so the Think agent can synthesize them intelligently.
+
+- **Conversation metadata.** At the start of each session, the system registers conversation metadata with EverMemOS — project name, participant roles (AI Data Technician as assistant, Researcher as user), and tags. This allows EverMemOS to maintain context about who said what and in which project.
+
+- **Chat turn logging.** Beyond explicit `remember` calls, the hybrid backend can log raw chat turns to EverMemOS via `store_chat_turn()`. This enables passive memory extraction — EverMemOS identifies important facts from natural conversation without the agent needing to explicitly decide what to save.
+
+- **Deployment options:**
+  - *Local (Docker):* `docker run -p 1995:1995 ghcr.io/nicholasgasior/evermemos:latest` — runs on your machine, data stays local, API at `http://localhost:1995/api/v1`.
+  - *Cloud:* Managed service at `api.evermind.ai` — no infrastructure to maintain, API key authentication. The system handles API differences between local and cloud automatically (query params vs. JSON body for search requests).
+
+- **Reliability.** The system uses async HTTP (httpx) with configurable timeouts (30s for search, 60s for storage) and graceful error handling. If EverMemOS is unreachable, the hybrid backend falls back to file-based memory — the system never crashes or loses data due to a backend outage.
+
+**Hybrid Backend (default)** — Writes to both file and EverMemOS simultaneously. Every `store()` call writes to `project_memory.md` first (synchronous, reliable), then to EverMemOS (best-effort, logs a warning on failure). For reads, the hybrid backend prefers EverMemOS (semantic search) and falls back to the file if EverMemOS is unavailable. This is the default configuration — you get git-trackable durability from the file backend plus semantic search from EverMemOS.
 
 ### Memory Quality Control
 
