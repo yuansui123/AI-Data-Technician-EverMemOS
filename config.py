@@ -26,14 +26,16 @@ AUTO_COMPACT_THRESHOLD = 40_000   # tokens; triggers Think-based compaction
 MEMORY_UPDATE_INTERVAL = 5        # user messages between periodic Think memory updates
 
 # ── Memory backend ────────────────────────────────────────────────────────────
-MEMORY_BACKEND = "evermemos_cloud" # "file" | "evermemos_local" | "evermemos_cloud"
+# Options: "file" | "evermemos_local" | "evermemos_cloud" | "hybrid"
+# "hybrid" writes to both file (git-trackable markdown) AND EverMemOS (semantic search)
+MEMORY_BACKEND = "hybrid"
 
 # EverMemOS endpoints — resolved automatically from MEMORY_BACKEND
 _EVERMEMOS_URLS = {
     "evermemos_local": "http://localhost:1995/api/v1",
     "evermemos_cloud": "https://api.evermind.ai/api/v0",
 }
-EVERMEMOS_BASE_URL = _EVERMEMOS_URLS.get(MEMORY_BACKEND, _EVERMEMOS_URLS["evermemos_local"])
+EVERMEMOS_BASE_URL = _EVERMEMOS_URLS.get(MEMORY_BACKEND, _EVERMEMOS_URLS["evermemos_cloud"])
 EVERMEMOS_API_KEY  = os.getenv("EVERMEMOS_API_KEY", "")  # only needed for cloud
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

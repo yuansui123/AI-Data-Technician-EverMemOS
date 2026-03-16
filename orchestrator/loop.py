@@ -334,7 +334,10 @@ class OrchestratorToolExecutor:
         for r in all_results:
             ts = r.get("timestamp", "")[:10]
             mtype = r.get("memory_type", "unknown")
-            kw = ", ".join(r.get("keywords", []))
+            kw_raw = r.get("keywords") or []
+            if isinstance(kw_raw, str):
+                kw_raw = [kw_raw]
+            kw = ", ".join(kw_raw)
             line = f"- [{mtype}"
             if ts:
                 line += f", {ts}"

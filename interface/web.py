@@ -221,12 +221,14 @@ HTML = """<!DOCTYPE html>
   .activity-item.sub_call { background: #1a1a2e; border-left: 3px solid #7c3aed; }
   .activity-item.sub_result { background: #0e1a20; border-left: 3px solid #0ea5e9; }
   .activity-item.error { background: #1a0f0f; border-left: 3px solid #ef4444; }
+  .activity-item.remember { background: #1a1a2e; border-left: 3px solid #d2a8ff; }
   .activity-item .label { font-weight: 600; margin-bottom: 2px; }
   .activity-item.tool_call .label { color: #818cf8; }
   .activity-item.tool_result .label { color: #4ade80; }
   .activity-item.sub_call .label { color: #c084fc; }
   .activity-item.sub_result .label { color: #38bdf8; }
   .activity-item.error .label { color: #f87171; }
+  .activity-item.remember .label { color: #d2a8ff; }
   .activity-item .detail { color: #94a3b8; word-break: break-all; }
   .activity-item .sub-indent { margin-left: 8px; opacity: 0.85; }
   #clear-btn { margin: 8px; padding: 6px; background: none; border: 1px solid #2d3147;
@@ -627,6 +629,11 @@ function handleEvent(ev) {
     logRecallToActivity(ev);
     setStatus('thinking', 'Recalling from memory...');
 
+  } else if (ev.type === 'remember') {
+    clearThinkingEntry();
+    logRememberToActivity(ev);
+    setStatus('thinking', 'Saving to memory...');
+
   } else if (ev.type === 'ask_user') {
     clearThinkingEntry();
     waitingForAnswer = true;
@@ -888,6 +895,30 @@ function logRecallToActivity(ev) {
     summary += ' (' + projCount + ' project, ' + globCount + ' global)';
   }
   html += '<div class="detail" style="margin-top:4px;color:#8b949e;font-style:italic;">' + summary + '</div>';
+
+  div.innerHTML = html;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function logRememberToActivity(ev) {
+  const log = document.getElementById('activity-log');
+  const div = document.createElement('div');
+  div.className = 'activity-item remember';
+  const content = ev.content || '';
+  const tags = ev.tags || [];
+  const scope = ev.scope || 'project';
+
+  let html = '<div class="label">💾 Remember</div>';
+  html += '<div class="detail" style="margin-left:12px;margin-top:4px;">' + escHtml(content) + '</div>';
+
+  if (tags.length > 0) {
+    const tagStr = tags.map(t => '<span style="background:#2d2050;color:#d2a8ff;padding:1px 6px;border-radius:3px;margin-right:4px;font-size:0.85em;">#' + escHtml(t) + '</span>').join(' ');
+    html += '<div class="detail" style="margin-left:12px;margin-top:6px;">' + tagStr + '</div>';
+  }
+
+  const scopeColor = scope === 'global' ? '#d2a8ff' : '#7ee787';
+  html += '<div class="detail" style="margin-top:4px;color:#8b949e;font-style:italic;">Saved to <span style="color:' + scopeColor + ';">' + escHtml(scope) + '</span> memory ✓</div>';
 
   div.innerHTML = html;
   log.appendChild(div);

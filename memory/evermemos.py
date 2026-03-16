@@ -210,8 +210,7 @@ class EverMemOSBackend(MemoryBackend):
 
     # All memory types supported by EverMemOS
     _ALL_MEMORY_TYPES = [
-        "episodic_memory", "profile", "semantic_knowledge",
-        "basic_facts", "core_memories",
+        "episodic_memory", "profile",
     ]
 
     async def retrieve(
