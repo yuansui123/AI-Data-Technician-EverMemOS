@@ -28,8 +28,8 @@ projects/*/feedback/
 # Scratch / temp
 tmpt/
 
-# User project data
-projects/
+# Workflows (not yet public)
+workflows/
 
 # IDE
 .vscode/
