@@ -90,11 +90,96 @@ class GlobalFileMemoryBackend(FileMemoryBackend):
         self.summary_path = global_dir / "global_memory.md"
 
 
+class HybridMemoryBackend(MemoryBackend):
+    """Writes to both FileMemoryBackend and EverMemOSBackend simultaneously.
+
+    Reads prefer EverMemOS (semantic search) with file as fallback.
+    This ensures durability (git-trackable markdown) plus semantic search (EverMemOS).
+    """
+
+    def __init__(self, project_dir: str | Path) -> None:
+        self.file_backend = FileMemoryBackend(project_dir)
+        from memory.evermemos import EverMemOSBackend
+        self.evermemos_backend = EverMemOSBackend(project_dir)
+
+    async def store(self, content: str, metadata: dict) -> None:
+        """Store to both backends. File write is synchronous and reliable;
+        EverMemOS is best-effort (logs warning on failure)."""
+        # Always write to file first (reliable, git-trackable)
+        await self.file_backend.store(content, metadata)
+        # Then write to EverMemOS (semantic search)
+        try:
+            await self.evermemos_backend.store(content, metadata)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Hybrid: EverMemOS store failed: %s", exc)
+
+    async def get_summary(self) -> str:
+        """Prefer EverMemOS summary (richer); fall back to file."""
+        try:
+            summary = await self.evermemos_backend.get_summary()
+            if summary:
+                return summary
+        except Exception:
+            pass
+        return await self.file_backend.get_summary()
+
+    async def retrieve(self, query: str, top_k: int = 5) -> str:
+        """Use EverMemOS semantic search; fall back to file summary."""
+        try:
+            result = await self.evermemos_backend.retrieve(query, top_k=top_k)
+            if result:
+                return result
+        except Exception:
+            pass
+        return await self.file_backend.retrieve(query, top_k=top_k)
+
+    # ── Passthrough for extended EverMemOS methods ────────────────────────────
+
+    async def retrieve_detailed(self, query: str, top_k: int = 8,
+                                memory_types: list[str] | None = None) -> list[dict]:
+        """Delegate to EverMemOS for detailed recall results."""
+        try:
+            return await self.evermemos_backend.retrieve_detailed(query, top_k=top_k, memory_types=memory_types)
+        except Exception:
+            return []
+
+    async def store_chat_turn(self, role: str, content: str, sender_name: str = "") -> None:
+        """Delegate chat turn logging to EverMemOS."""
+        try:
+            await self.evermemos_backend.store_chat_turn(role, content, sender_name)
+        except Exception:
+            pass
+
+    async def search_profiles(self, user_id: str = "user", top_k: int = 5) -> str:
+        """Delegate profile search to EverMemOS."""
+        try:
+            return await self.evermemos_backend.search_profiles(user_id, top_k)
+        except Exception:
+            return ""
+
+
+class GlobalHybridMemoryBackend(HybridMemoryBackend):
+    """Hybrid global memory — file + EverMemOS for cross-project scope."""
+
+    def __init__(self) -> None:
+        import config
+        global_dir = Path(config.PROJECTS_DIR) / "_global"
+        global_dir.mkdir(parents=True, exist_ok=True)
+        self.file_backend = FileMemoryBackend.__new__(FileMemoryBackend)
+        self.file_backend.summary_path = global_dir / "global_memory.md"
+        from memory.evermemos import EverMemOSBackend
+        self.evermemos_backend = EverMemOSBackend(global_dir)
+        self.evermemos_backend.group_id = "adt_global"
+
+
 def get_global_backend() -> MemoryBackend:
     """Factory for the global (cross-project) memory backend."""
     import config
     if config.MEMORY_BACKEND == "file":
         return GlobalFileMemoryBackend()
+    if config.MEMORY_BACKEND == "hybrid":
+        return GlobalHybridMemoryBackend()
     if config.MEMORY_BACKEND.startswith("evermemos"):
         from memory.evermemos import EverMemOSBackend
         backend = EverMemOSBackend(Path(config.PROJECTS_DIR) / "_global")
@@ -108,6 +193,8 @@ def get_memory_backend(project_dir: str | Path) -> MemoryBackend:
     import config
     if config.MEMORY_BACKEND == "file":
         return FileMemoryBackend(project_dir)
+    if config.MEMORY_BACKEND == "hybrid":
+        return HybridMemoryBackend(project_dir)
     if config.MEMORY_BACKEND.startswith("evermemos"):
         from memory.evermemos import EverMemOSBackend  # deferred import
         return EverMemOSBackend(project_dir)

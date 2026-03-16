@@ -231,6 +231,9 @@ class OrchestratorToolExecutor:
         if tool_name == "recall":
             return await self._recall(inp)
 
+        if tool_name == "remember":
+            return await self._remember(inp)
+
         raise ValueError(f"Unknown tool: {tool_name!r}")
 
     def _todo_write(self, todos: list) -> dict:
@@ -362,6 +365,61 @@ class OrchestratorToolExecutor:
             return {"response": "Memories found but none were relevant to the objective."}
 
         return {"response": f"## Recalled Knowledge\n\n{synthesis}"}
+
+    async def _remember(self, inp: dict) -> dict:
+        """Remember tool — explicitly save user-specified knowledge to long-term memory.
+
+        Stores to the active memory backend (project or global scope).
+        If using HybridMemoryBackend, this automatically writes to both file and EverMemOS.
+        """
+        from memory.backend import get_global_backend
+
+        content = inp["content"]
+        tags = inp.get("tags", [])
+        scope = inp.get("scope", "project")
+
+        # Choose target backend
+        if scope == "global":
+            backend = get_global_backend()
+        else:
+            backend = self.memory_backend
+
+        # Build metadata
+        section = "User Knowledge"
+        if tags:
+            # Use first tag as section hint for file backend
+            section = tags[0].replace("_", " ").title()
+
+        metadata = {
+            "section": section,
+            "role": "user",
+            "memory_type": "episodic_memory",  # broadest EverMemOS type — covers all remembered knowledge
+            "tags": tags,
+        }
+
+        # Store the memory
+        try:
+            await backend.store(content, metadata)
+        except Exception as exc:
+            return {"response": f"Failed to save memory: {exc}"}
+
+        # Emit UI event so the browser shows confirmation
+        if self.on_event:
+            await self.on_event({
+                "type": "remember",
+                "content": content[:200],
+                "tags": tags,
+                "scope": scope,
+            })
+
+        tag_str = ", ".join(tags) if tags else "none"
+        return {
+            "response": (
+                f"Saved to {scope} memory.\n"
+                f"**Tags:** {tag_str}\n"
+                f"**Content:** {content[:150]}{'...' if len(content) > 150 else ''}"
+            )
+        }
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────
