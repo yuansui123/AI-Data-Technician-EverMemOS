@@ -232,13 +232,27 @@ User (Browser)
 ### Setup
 
 ```bash
-# Clone and install
+# Clone and install (all OS)
 git clone git@github.com:yuansui123/AI-Data-Technician.git
 cd AI-Data-Technician
 pixi install
+```
 
-# Configure API keys
+**Linux / macOS (POSIX shell)**
+
+```bash
 cp .env.template .env
+# Edit .env: ANTHROPIC_API_KEY=sk-ant-...  GOOGLE_API_KEY=AIza...
+
+# Launch
+pixi run web
+# Open http://localhost:8000
+```
+
+**Windows (PowerShell)**
+
+```powershell
+Copy-Item .env.template .env
 # Edit .env: ANTHROPIC_API_KEY=sk-ant-...  GOOGLE_API_KEY=AIza...
 
 # Launch

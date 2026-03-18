@@ -78,13 +78,15 @@ def _is_under(path: Path, root: Path) -> bool:
 async def serve_file(path: str):
     """Serve image files inside the projects directory or system temp."""
     import config
+    import sys
     import tempfile
     full_path = Path(path).resolve()
     allowed_roots = [
         Path(config.PROJECTS_DIR).resolve(),
         Path(tempfile.gettempdir()).resolve(),
-        Path(r"C:\Windows\Temp").resolve(),   # scripts often write here on Windows
     ]
+    if sys.platform == "win32":
+        allowed_roots.append(Path(r"C:\Windows\Temp").resolve())  # scripts often write here on Windows
     if not any(_is_under(full_path, root) for root in allowed_roots):
         raise HTTPException(status_code=403, detail="Access denied")
     if not full_path.exists():

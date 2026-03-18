@@ -43,6 +43,7 @@ async def bash(
     if env:
         merged_env.update(env)
 
+    proc: asyncio.subprocess.Process | None = None
     try:
         import sys as _sys
         if _sys.platform == "win32":
@@ -63,6 +64,15 @@ async def bash(
             )
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=2)
+            except Exception:
+                pass
         return BashResult(stdout="", stderr=f"[timeout after {timeout}s]", returncode=-1)
     except Exception as exc:  # noqa: BLE001
         return BashResult(stdout="", stderr=str(exc), returncode=-1)
@@ -74,16 +84,26 @@ async def bash(
     )
 
 
+def runtime_shell_label() -> str:
+    """Human-readable shell label matching bash() runtime behavior."""
+    import sys as _sys
+
+    if _sys.platform == "win32":
+        return "Windows PowerShell (`powershell -Command`)"
+    return "POSIX shell (`/bin/sh -c`)"
+
+
 # -- Anthropic tool schema --------------------------------------------------
 
 SCHEMA: dict = {
     "name": "bash",
     "description": (
-        "Execute a shell command via Windows PowerShell. "
+        "Execute a shell command via the host shell "
+        "(PowerShell on Windows, POSIX shell on Linux/macOS). "
         "Use this to run Python scripts, list files, compute statistics, extract PDF text. "
         "Multi-line python -c is supported. Use single quotes inside python -c strings: "
         "python -c \"import sys; print('ok')\". "
-        "Use Get-ChildItem or dir for listing. Select-Object -First N replaces head."
+        "Use command syntax that matches the current runtime environment."
     ),
     "input_schema": {
         "type": "object",

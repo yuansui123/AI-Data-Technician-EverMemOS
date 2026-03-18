@@ -10,8 +10,20 @@ from pathlib import Path
 
 
 def _load_prompt() -> str:
+    import sys
+    import tempfile
+    from tools.bash import runtime_shell_label
+
     p = Path(__file__).parent.parent / "prompts" / "system" / "task.md"
-    return p.read_text(encoding="utf-8")
+    runtime_shell = runtime_shell_label()
+    runtime_context = (
+        "\n\n## Runtime Environment\n"
+        f"- OS platform: `{sys.platform}`\n"
+        f"- bash tool shell: {runtime_shell}\n"
+        f"- System temp directory: `{Path(tempfile.gettempdir())}`\n"
+        "- Use commands and path syntax compatible with this runtime."
+    )
+    return p.read_text(encoding="utf-8") + runtime_context
 
 
 async def task(

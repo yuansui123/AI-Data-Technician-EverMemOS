@@ -175,18 +175,48 @@ class OrchestratorToolExecutor:
         if tool_name == "plot":
             from tools.bash import bash
             import json as _json
+            import os
+            import shutil
+            import sys
             import tempfile
             code = inp["python_code"]
             title = inp.get("title", "Plot")
             # Wrap with matplotlib dark-theme preamble + auto-capture epilogue
             full_code = _MPL_PREAMBLE + "\n" + code + "\n" + _MPL_EPILOGUE
-            plot_script = Path(tempfile.gettempdir()) / "show_plot.py"
-            cmd = (
-                f"$code = @'\n{full_code}\n'@\n"
-                f"$code | Out-File -Encoding utf8 {plot_script}\n"
-                f"python {plot_script}"
-            )
-            result = await bash(cmd, cwd=str(p))
+            fd, script_path = tempfile.mkstemp(prefix="adt_plot_", suffix=".py")
+            plot_script = Path(script_path)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(full_code)
+            except Exception as e:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                return {"response": f"Plot failed: could not write temp script: {e}"}
+
+            mplconfig_dir: Path | None = None
+            try:
+                mplconfig_dir = Path(tempfile.mkdtemp(prefix="adt_mplconfig_"))
+                if sys.platform == "win32":
+                    cmd = f'& "{sys.executable}" "{plot_script}"'
+                else:
+                    cmd = f'"{sys.executable}" "{plot_script}"'
+                result = await bash(
+                    cmd,
+                    cwd=str(p),
+                    env={"MPLCONFIGDIR": str(mplconfig_dir)},
+                )
+            finally:
+                try:
+                    plot_script.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if mplconfig_dir is not None:
+                    try:
+                        shutil.rmtree(mplconfig_dir, ignore_errors=True)
+                    except Exception:
+                        pass
             if not result.ok or not result.stdout.strip():
                 return {"response": f"Plot failed: {result.stderr or '(no output)'}"}
             # Check for matplotlib base64 PNG output (scan from end)
@@ -428,11 +458,32 @@ class OrchestratorToolExecutor:
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def _load_system_prompt(project_dir: Path, memory: str, global_memory: str = "") -> str:
+    import sys
+    import tempfile
+    from tools.bash import runtime_shell_label
+
     prompt_path = Path(__file__).parent.parent / "prompts" / "system" / "orchestrator.md"
     base = prompt_path.read_text(encoding="utf-8")
     tmp_dir = project_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    parts = [base, f"\n## Current Session Paths\n- **Project directory:** `{project_dir}`\n- **Save all generated plots and output files to:** `{tmp_dir}`\n  (Never save to the source data directory.)"]
+    runtime_shell = runtime_shell_label()
+    system_tmp_dir = Path(tempfile.gettempdir())
+    parts = [
+        base,
+        (
+            f"\n## Current Session Paths\n"
+            f"- **Project directory:** `{project_dir}`\n"
+            f"- **Save all generated plots and output files to:** `{tmp_dir}`\n"
+            "  (Never save to the source data directory.)"
+        ),
+        (
+            f"\n## Runtime Environment\n"
+            f"- **OS platform:** `{sys.platform}`\n"
+            f"- **bash tool shell:** {runtime_shell}\n"
+            f"- **System temp directory:** `{system_tmp_dir}`\n"
+            "- Use shell commands and path syntax compatible with this runtime."
+        ),
+    ]
     if memory:
         parts.append(f"\n## Project Memory\n{memory}")
     if global_memory:
