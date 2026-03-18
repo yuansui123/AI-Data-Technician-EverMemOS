@@ -7,6 +7,10 @@ the agent executes using bash, vision, read, write tools.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sandbox.executor import SandboxExecutor
 
 
 def _load_prompt() -> str:
@@ -31,6 +35,8 @@ async def task(
     project_dir: str | Path | None = None,
     max_iterations: int = 15,
     on_event=None,
+    sandbox_executor: "SandboxExecutor | None" = None,
+    parent_session_id: str | None = None,
 ) -> str:
     """Run the Task agent and return the response text.
 
@@ -41,8 +47,18 @@ async def task(
         on_event: Callback for streaming events.
     """
     from agents.runner import SubagentConfig, ToolExecutor, invoke
+    from sandbox import create_sandbox_executor
     from tools import TASK_TOOLS
     import config
+
+    project_path = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
+    active_sandbox_executor = sandbox_executor or create_sandbox_executor()
+    sandbox_session = await active_sandbox_executor.start_session(
+        project_dir=project_path,
+        scope="task",
+        parent_session_id=parent_session_id,
+        allowed_roots=[project_path],
+    )
 
     cfg = SubagentConfig(
         model=config.TASK_MODEL,
@@ -53,8 +69,6 @@ async def task(
         max_tokens=4096,
     )
 
-    executor = ToolExecutor(project_dir=str(project_dir) if project_dir else None)
-
     sub_on_event = None
     if on_event:
         _TYPE_MAP = {"tool_call": "sub_tool_call", "tool_result": "sub_tool_result"}
@@ -64,7 +78,19 @@ async def task(
             mapped["type"] = _TYPE_MAP.get(event.get("type", ""), event["type"])
             await on_event(mapped)
 
-    result = await invoke(cfg, [{"role": "user", "content": task_description}],
-                          tool_executor=executor, on_event=sub_on_event)
+    executor = ToolExecutor(
+        project_dir=project_path,
+        sandbox_session=sandbox_session,
+        allowed_roots=[project_path],
+    )
 
-    return result.text.strip()
+    try:
+        result = await invoke(
+            cfg,
+            [{"role": "user", "content": task_description}],
+            tool_executor=executor,
+            on_event=sub_on_event,
+        )
+        return result.text.strip()
+    finally:
+        await sandbox_session.close()

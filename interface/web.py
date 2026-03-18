@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1232,10 +1233,14 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "response", "content": response}))
             except WebSocketDisconnect:
                 orch_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await orch_task
                 raise
             except Exception as exc:
                 if not orch_task.done():
                     orch_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await orch_task
                 msg_str = str(exc)
                 if "529" in msg_str or "overloaded" in msg_str.lower():
                     err = "Anthropic API overloaded — please try again in a moment."

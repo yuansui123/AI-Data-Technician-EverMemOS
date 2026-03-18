@@ -6,6 +6,9 @@ Supports optional offset/limit for paging through large content.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Sequence
+
+from sandbox.policy import validate_path_in_roots
 
 
 # ---------------------------------------------------------------------------
@@ -102,9 +105,20 @@ def read(
     path: str | Path,
     max_chars: int = 8000,
     offset_chars: int = 0,
+    allowed_roots: Sequence[str | Path] | None = None,
 ) -> dict:
     """Read a file and return its content with paging metadata."""
-    path = Path(path)
+    raw_path = Path(path)
+    if not raw_path.is_absolute() and allowed_roots:
+        base = Path(next(iter(allowed_roots))).resolve()
+        path = (base / raw_path).resolve()
+    else:
+        path = raw_path.resolve()
+    if allowed_roots:
+        roots = [Path(root).resolve() for root in allowed_roots]
+        guard_error = validate_path_in_roots(path, roots, label="path")
+        if guard_error:
+            return {"response": guard_error}
     if not path.exists():
         return {"response": f"File not found: {path}"}
 

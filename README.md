@@ -302,6 +302,59 @@ All settings in [`config.py`](config.py):
 | `TASK_MAX_ITER` | `15` | Max tool-use iterations per task |
 | `AUTO_COMPACT_THRESHOLD` | `40000` | Token count triggering compaction |
 | `MEMORY_UPDATE_INTERVAL` | `5` | User messages between memory updates |
+| `SANDBOX_BACKEND` | `"local"` | Shell backend: `"local"` (default) or `"docker"` |
+| `SANDBOX_COMMAND_TIMEOUT_SECONDS` | `120` | Default per-command timeout for sandbox sessions |
+| `SANDBOX_DOCKER_IMAGE` | `"python:3.11-slim"` | Container image used when `SANDBOX_BACKEND="docker"` |
+| `SANDBOX_CPUS` | `"1"` | Docker CPU limit (`--cpus`) |
+| `SANDBOX_MEMORY` | `"2g"` | Docker memory limit (`--memory`) |
+| `SANDBOX_PIDS_LIMIT` | `256` | Docker process limit (`--pids-limit`) |
+
+### Sandbox Sessions (Per Turn / Per Task)
+
+- Orchestrator uses one sandbox session per user turn.
+- Task agent uses a separate sandbox session per task invocation.
+- In Docker mode, each session is one `docker run` container with many `docker exec` calls.
+- Network is disabled in v1 (`--network none`) with no model/user override path.
+- Local backend remains the default for backward compatibility.
+
+### Local Docker Smoke Test
+
+```bash
+export SANDBOX_BACKEND=docker
+python scripts/smoke_docker_sandbox.py
+```
+
+Optional integration test:
+
+```bash
+RUN_DOCKER_SANDBOX_TESTS=1 python -m unittest tests.test_sandbox_docker_integration
+```
+
+### Docker Daemon Troubleshooting (Linux)
+
+If you see `Cannot connect to the Docker daemon at unix:///var/run/docker.sock`:
+
+```bash
+sudo systemctl status docker
+sudo systemctl start docker
+sudo systemctl enable docker
+docker info
+```
+
+If `docker info` only works with `sudo`, add your user to the docker group:
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+docker info
+```
+
+### EC2 Deployment Notes (Docker Backend)
+
+1. Build or pull a pinned sandbox image and set `SANDBOX_DOCKER_IMAGE`.
+2. Ensure the app host user can run `docker run`, `docker exec`, and `docker rm`.
+3. Keep `SANDBOX_BACKEND=local` during initial rollout, then switch to `docker`.
+4. Verify logs include `sandbox_session_started`, `sandbox_exec`, and `sandbox_session_closed` per turn/task.
 
 ---
 

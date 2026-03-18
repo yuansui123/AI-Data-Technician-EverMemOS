@@ -8,6 +8,12 @@ import asyncio
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Sequence
+
+from sandbox.policy import resolve_and_validate_cwd
+
+if TYPE_CHECKING:
+    from sandbox.executor import SandboxSession
 
 
 @dataclass
@@ -37,11 +43,35 @@ async def bash(
     cwd: str | Path | None = None,
     timeout: int = 60,
     env: dict[str, str] | None = None,
+    sandbox_session: "SandboxSession | None" = None,
+    allowed_roots: Sequence[str | Path] | None = None,
 ) -> BashResult:
     """Execute *cmd* in a subprocess and return a BashResult."""
+    if sandbox_session is not None:
+        return await sandbox_session.exec(
+            cmd=cmd,
+            cwd=cwd,
+            timeout=timeout,
+            env=env,
+        )
+
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
+
+    resolved_cwd: Path | None = None
+    if allowed_roots:
+        roots = tuple(Path(root).resolve() for root in allowed_roots)
+        default_cwd = Path(cwd).resolve() if cwd else roots[0]
+        resolved_cwd, guard_error = resolve_and_validate_cwd(
+            cwd=cwd,
+            default_cwd=default_cwd,
+            allowed_roots=roots,
+        )
+        if guard_error:
+            return BashResult(stdout="", stderr=guard_error, returncode=-1)
+    elif cwd:
+        resolved_cwd = Path(cwd).resolve()
 
     proc: asyncio.subprocess.Process | None = None
     try:
@@ -51,7 +81,7 @@ async def bash(
                 "powershell", "-NoProfile", "-NonInteractive", "-Command", cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd) if cwd else None,
+                cwd=str(resolved_cwd) if resolved_cwd else None,
                 env=merged_env,
             )
         else:
@@ -59,7 +89,7 @@ async def bash(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd) if cwd else None,
+                cwd=str(resolved_cwd) if resolved_cwd else None,
                 env=merged_env,
             )
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -86,8 +116,12 @@ async def bash(
 
 def runtime_shell_label() -> str:
     """Human-readable shell label matching bash() runtime behavior."""
+    import config
     import sys as _sys
 
+    backend = str(getattr(config, "SANDBOX_BACKEND", "local")).lower()
+    if backend == "docker":
+        return "Docker sandbox shell (`docker exec sh -lc`)"
     if _sys.platform == "win32":
         return "Windows PowerShell (`powershell -Command`)"
     return "POSIX shell (`/bin/sh -c`)"
@@ -98,8 +132,8 @@ def runtime_shell_label() -> str:
 SCHEMA: dict = {
     "name": "bash",
     "description": (
-        "Execute a shell command via the host shell "
-        "(PowerShell on Windows, POSIX shell on Linux/macOS). "
+        "Execute a shell command inside the active sandbox "
+        "(local subprocess by default; Docker exec when docker backend is enabled). "
         "Use this to run Python scripts, list files, compute statistics, extract PDF text. "
         "Multi-line python -c is supported. Use single quotes inside python -c strings: "
         "python -c \"import sys; print('ok')\". "
