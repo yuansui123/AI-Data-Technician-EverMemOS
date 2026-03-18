@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from memory.backend import MemoryBackend
     from session.session import Session
+    from sandbox.executor import SandboxExecutor, SandboxSession
 
 
 # ── Orchestrator tool definitions ──────────────────────────────────────────────
@@ -83,13 +84,25 @@ except ImportError:
 # ── Tool executor ──────────────────────────────────────────────────────────────
 
 class OrchestratorToolExecutor:
-    def __init__(self, project_dir: Path, memory_backend, context_carry: dict, session=None, on_event=None, answer_queue=None):
+    def __init__(
+        self,
+        project_dir: Path,
+        memory_backend,
+        context_carry: dict,
+        session=None,
+        on_event=None,
+        answer_queue=None,
+        sandbox_session: "SandboxSession | None" = None,
+        sandbox_executor: "SandboxExecutor | None" = None,
+    ):
         self.project_dir = project_dir
         self.memory_backend = memory_backend
         self.carry = dict(context_carry)
         self.session = session  # held so todo_write can update session.todos in place
         self.on_event = on_event  # forwarded to workflows so subagent steps are visible
         self.answer_queue = answer_queue  # asyncio.Queue for ask_user answers from browser
+        self.sandbox_session = sandbox_session
+        self.sandbox_executor = sandbox_executor
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         try:
@@ -103,6 +116,12 @@ class OrchestratorToolExecutor:
         except Exception as exc:  # noqa: BLE001
             return f"[Error] {tool_name}: {exc}"
 
+    @property
+    def _allowed_roots(self) -> tuple[str, ...]:
+        if self.sandbox_session is not None:
+            return tuple(str(root) for root in self.sandbox_session.allowed_roots)
+        return (str(self.project_dir),)
+
     async def _dispatch(self, tool_name: str, inp: dict) -> dict:
         p = self.project_dir
 
@@ -112,6 +131,7 @@ class OrchestratorToolExecutor:
                 path=inp["path"],
                 max_chars=int(inp.get("max_chars", 8000)),
                 offset_chars=int(inp.get("offset_chars", 0)),
+                allowed_roots=self._allowed_roots,
             )
 
         if tool_name == "task":
@@ -130,6 +150,8 @@ class OrchestratorToolExecutor:
                 task_description=desc,
                 project_dir=p,
                 on_event=self.on_event,
+                sandbox_executor=self.sandbox_executor,
+                parent_session_id=self.sandbox_session.session_id if self.sandbox_session else None,
             )
             return {"response": result_text}
 
@@ -166,7 +188,13 @@ class OrchestratorToolExecutor:
 
         if tool_name == "bash":
             from tools.bash import bash
-            result = await bash(inp["command"], cwd=inp.get("cwd", str(p)))
+            result = await bash(
+                inp["command"],
+                cwd=inp.get("cwd", str(p)),
+                timeout=int(inp.get("timeout", 60)),
+                sandbox_session=self.sandbox_session,
+                allowed_roots=self._allowed_roots,
+            )
             out = result.stdout or ""
             if result.stderr:
                 out += f"\n[stderr] {result.stderr}"
@@ -175,18 +203,46 @@ class OrchestratorToolExecutor:
         if tool_name == "plot":
             from tools.bash import bash
             import json as _json
-            import tempfile
+            import shutil
+            import sys
+            from uuid import uuid4
             code = inp["python_code"]
             title = inp.get("title", "Plot")
             # Wrap with matplotlib dark-theme preamble + auto-capture epilogue
             full_code = _MPL_PREAMBLE + "\n" + code + "\n" + _MPL_EPILOGUE
-            plot_script = Path(tempfile.gettempdir()) / "show_plot.py"
-            cmd = (
-                f"$code = @'\n{full_code}\n'@\n"
-                f"$code | Out-File -Encoding utf8 {plot_script}\n"
-                f"python {plot_script}"
-            )
-            result = await bash(cmd, cwd=str(p))
+            session_tmp = self.sandbox_session.tmp_dir if self.sandbox_session else (p / "tmp" / "session_plot_fallback")
+            session_tmp.mkdir(parents=True, exist_ok=True)
+            plot_script = session_tmp / f"adt_plot_{uuid4().hex}.py"
+            try:
+                plot_script.write_text(full_code, encoding="utf-8")
+            except Exception as e:
+                return {"response": f"Plot failed: could not write temp script: {e}"}
+
+            mplconfig_dir: Path | None = None
+            try:
+                mplconfig_dir = session_tmp / f"adt_mplconfig_{uuid4().hex}"
+                mplconfig_dir.mkdir(parents=True, exist_ok=True)
+                if sys.platform == "win32":
+                    cmd = f'& "{sys.executable}" "{plot_script}"'
+                else:
+                    cmd = f'"{sys.executable}" "{plot_script}"'
+                result = await bash(
+                    cmd,
+                    cwd=str(p),
+                    env={"MPLCONFIGDIR": str(mplconfig_dir)},
+                    sandbox_session=self.sandbox_session,
+                    allowed_roots=self._allowed_roots,
+                )
+            finally:
+                try:
+                    plot_script.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if mplconfig_dir is not None:
+                    try:
+                        shutil.rmtree(mplconfig_dir, ignore_errors=True)
+                    except Exception:
+                        pass
             if not result.ok or not result.stdout.strip():
                 return {"response": f"Plot failed: {result.stderr or '(no output)'}"}
             # Check for matplotlib base64 PNG output (scan from end)
@@ -428,11 +484,32 @@ class OrchestratorToolExecutor:
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def _load_system_prompt(project_dir: Path, memory: str, global_memory: str = "") -> str:
+    import sys
+    import tempfile
+    from tools.bash import runtime_shell_label
+
     prompt_path = Path(__file__).parent.parent / "prompts" / "system" / "orchestrator.md"
     base = prompt_path.read_text(encoding="utf-8")
     tmp_dir = project_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    parts = [base, f"\n## Current Session Paths\n- **Project directory:** `{project_dir}`\n- **Save all generated plots and output files to:** `{tmp_dir}`\n  (Never save to the source data directory.)"]
+    runtime_shell = runtime_shell_label()
+    system_tmp_dir = Path(tempfile.gettempdir())
+    parts = [
+        base,
+        (
+            f"\n## Current Session Paths\n"
+            f"- **Project directory:** `{project_dir}`\n"
+            f"- **Save all generated plots and output files to:** `{tmp_dir}`\n"
+            "  (Never save to the source data directory.)"
+        ),
+        (
+            f"\n## Runtime Environment\n"
+            f"- **OS platform:** `{sys.platform}`\n"
+            f"- **bash tool shell:** {runtime_shell}\n"
+            f"- **System temp directory:** `{system_tmp_dir}`\n"
+            "- Use shell commands and path syntax compatible with this runtime."
+        ),
+    ]
     if memory:
         parts.append(f"\n## Project Memory\n{memory}")
     if global_memory:
@@ -450,69 +527,82 @@ async def run(
 ) -> str:
     from session.context_builder import build_context
     from agents.runner import SubagentConfig, invoke
+    from sandbox import create_sandbox_executor
     import config
 
-    project_dir = Path(project_dir)
-
-    # Build context
-    ctx = await build_context(project_dir, session, memory_backend, user_input)
-
-    # Assemble conversation messages (include history for continuity)
-    messages = []
-    for turn in ctx.get("turns", []):
-        role = turn.get("role", "user")
-        content = turn.get("content", "")
-        if role == "summary" and content:
-            messages.append({"role": "user", "content": f"[Previous conversation summary]\n{content}"})
-        elif role in ("user", "assistant") and content:
-            messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": user_input})
-
-    # System prompt = orchestrator.md + project memory + todos/carry
-    system_prompt = _load_system_prompt(
-        project_dir,
-        memory=ctx.get("memory", ""),
-        global_memory=ctx.get("global_memory", ""),
-    )
-    from session.context_builder import format_context_for_llm
-    extra_context = format_context_for_llm(ctx)
-    if extra_context:
-        system_prompt += "\n\n" + extra_context
-
-    # Tool executor
-    executor = OrchestratorToolExecutor(
+    project_dir = Path(project_dir).resolve()
+    sandbox_executor = create_sandbox_executor()
+    sandbox_session = await sandbox_executor.start_session(
         project_dir=project_dir,
-        memory_backend=memory_backend,
-        context_carry=dict(session.context_carry),
-        session=session,
-        on_event=on_event,
-        answer_queue=answer_queue,
+        scope="turn",
+        parent_session_id=session.session_id,
+        allowed_roots=[project_dir],
     )
 
-    # Agent config
-    iter_limit = config.ORCHESTRATOR_LIMITS.get("moderate", 20)
-    cfg = SubagentConfig(
-        model=config.ORCHESTRATOR_MODEL,
-        system_prompt=system_prompt,
-        tools=ORCHESTRATOR_TOOLS,
-        thinking_budget=config.ORCHESTRATOR_THINKING_BUDGET,
-        max_iterations=iter_limit,
-        max_tokens=8192,
-    )
+    try:
+        # Build context
+        ctx = await build_context(project_dir, session, memory_backend, user_input)
 
-    # Run agent loop
-    result = await invoke(cfg, messages, tool_executor=executor, on_event=on_event)
+        # Assemble conversation messages (include history for continuity)
+        messages = []
+        for turn in ctx.get("turns", []):
+            role = turn.get("role", "user")
+            content = turn.get("content", "")
+            if role == "summary" and content:
+                messages.append({"role": "user", "content": f"[Previous conversation summary]\n{content}"})
+            elif role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_input})
 
-    # Persist carry-over facts
-    session.context_carry = executor.carry
+        # System prompt = orchestrator.md + project memory + todos/carry
+        system_prompt = _load_system_prompt(
+            project_dir,
+            memory=ctx.get("memory", ""),
+            global_memory=ctx.get("global_memory", ""),
+        )
+        from session.context_builder import format_context_for_llm
+        extra_context = format_context_for_llm(ctx)
+        if extra_context:
+            system_prompt += "\n\n" + extra_context
 
-    # Periodic memory update (runs every ~15 turns)
-    from orchestrator.memory_gate import maybe_update_memory
-    await maybe_update_memory(session, memory_backend)
+        # Tool executor
+        executor = OrchestratorToolExecutor(
+            project_dir=project_dir,
+            memory_backend=memory_backend,
+            context_carry=dict(session.context_carry),
+            session=session,
+            on_event=on_event,
+            answer_queue=answer_queue,
+            sandbox_session=sandbox_session,
+            sandbox_executor=sandbox_executor,
+        )
 
-    # Passive EverMemOS conversation logging (if available)
-    if hasattr(memory_backend, 'store_chat_turn'):
-        await memory_backend.store_chat_turn("user", user_input)
-        await memory_backend.store_chat_turn("assistant", result.text or "")
+        # Agent config
+        iter_limit = config.ORCHESTRATOR_LIMITS.get("moderate", 20)
+        cfg = SubagentConfig(
+            model=config.ORCHESTRATOR_MODEL,
+            system_prompt=system_prompt,
+            tools=ORCHESTRATOR_TOOLS,
+            thinking_budget=config.ORCHESTRATOR_THINKING_BUDGET,
+            max_iterations=iter_limit,
+            max_tokens=8192,
+        )
 
-    return result.text or "(no response)"
+        # Run agent loop
+        result = await invoke(cfg, messages, tool_executor=executor, on_event=on_event)
+
+        # Persist carry-over facts
+        session.context_carry = executor.carry
+
+        # Periodic memory update (runs every ~15 turns)
+        from orchestrator.memory_gate import maybe_update_memory
+        await maybe_update_memory(session, memory_backend)
+
+        # Passive EverMemOS conversation logging (if available)
+        if hasattr(memory_backend, 'store_chat_turn'):
+            await memory_backend.store_chat_turn("user", user_input)
+            await memory_backend.store_chat_turn("assistant", result.text or "")
+
+        return result.text or "(no response)"
+    finally:
+        await sandbox_session.close()

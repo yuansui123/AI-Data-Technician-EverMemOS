@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -78,13 +79,15 @@ def _is_under(path: Path, root: Path) -> bool:
 async def serve_file(path: str):
     """Serve image files inside the projects directory or system temp."""
     import config
+    import sys
     import tempfile
     full_path = Path(path).resolve()
     allowed_roots = [
         Path(config.PROJECTS_DIR).resolve(),
         Path(tempfile.gettempdir()).resolve(),
-        Path(r"C:\Windows\Temp").resolve(),   # scripts often write here on Windows
     ]
+    if sys.platform == "win32":
+        allowed_roots.append(Path(r"C:\Windows\Temp").resolve())  # scripts often write here on Windows
     if not any(_is_under(full_path, root) for root in allowed_roots):
         raise HTTPException(status_code=403, detail="Access denied")
     if not full_path.exists():
@@ -1230,10 +1233,14 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "response", "content": response}))
             except WebSocketDisconnect:
                 orch_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await orch_task
                 raise
             except Exception as exc:
                 if not orch_task.done():
                     orch_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await orch_task
                 msg_str = str(exc)
                 if "529" in msg_str or "overloaded" in msg_str.lower():
                     err = "Anthropic API overloaded — please try again in a moment."

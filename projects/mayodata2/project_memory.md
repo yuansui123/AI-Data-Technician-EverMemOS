@@ -53,7 +53,7 @@ ax.axhline(200, color='magenta', linestyle='--', linewidth=1)
 ---
 
 ## Dataset: MayoData1000
-- **Path:** `C:\Users\yuans\Desktop\ClaudeCode\v3mayo\user\MayoData1000`
+- **Path:** `<dataset_root>/MayoData1000`
 - **Source:** Multicenter intracranial EEG (iEEG) — Mayo Clinic (Nejedly et al., *Scientific Data*, 2020)
 - **Signals folder:** `/signals/` — **1,000 `.mat` files**, each named by signal ID (e.g., `x046608.mat`)
 - **Loading:** Use `scipy.io.loadmat(filepath)` — key fields include raw time-series data, channel label, patient ID, and SOZ label
@@ -169,7 +169,7 @@ Visual Features:
 These examples were visually confirmed by the researcher and vision model analysis on 2026-03-16.
 
 ## Dataset
-- **Path:** `C:\Users\yuans\Desktop\ClaudeCode\v3mayo\user\MayoData1000`
+- **Path:** `<dataset_root>/MayoData1000`
 - **Source:** Mayo Clinic multicenter iEEG — Nejedly et al., *Scientific Data*, 2020
 - **Files:** 1,000 `.mat` files in `/signals/` subdirectory; filename format `x{6-digit-index}.mat` (e.g., `x046608.mat`)
 - **Loading:** MATLAB `.mat` format; load with `scipy.io.loadmat()`

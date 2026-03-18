@@ -9,6 +9,10 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Awaitable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sandbox.executor import SandboxSession
 
 
 @dataclass
@@ -42,8 +46,20 @@ class ToolExecutor:
     Extend by registering additional handlers.
     """
 
-    def __init__(self, project_dir: str | None = None):
-        self.project_dir = project_dir
+    def __init__(
+        self,
+        project_dir: str | Path | None = None,
+        sandbox_session: "SandboxSession | None" = None,
+        allowed_roots: list[str | Path] | None = None,
+    ):
+        self.project_dir = Path(project_dir).resolve() if project_dir else None
+        self.sandbox_session = sandbox_session
+        if allowed_roots:
+            self.allowed_roots = tuple(Path(root).resolve() for root in allowed_roots)
+        elif self.project_dir is not None:
+            self.allowed_roots = (self.project_dir,)
+        else:
+            self.allowed_roots = ()
         self._handlers: dict[str, ToolExecutorFn] = {}
         self._register_defaults()
 
@@ -69,8 +85,10 @@ class ToolExecutor:
         from tools.bash import bash
         result = await bash(
             cmd=inp["command"],
-            cwd=inp.get("cwd", self.project_dir),
+            cwd=inp.get("cwd", str(self.project_dir) if self.project_dir else None),
             timeout=inp.get("timeout", 60),
+            sandbox_session=self.sandbox_session,
+            allowed_roots=self.allowed_roots or None,
         )
         out = result.stdout or ""
         if result.stderr:
@@ -92,6 +110,7 @@ class ToolExecutor:
             path=inp["path"],
             max_chars=int(inp.get("max_chars", 8000)),
             offset_chars=int(inp.get("offset_chars", 0)),
+            allowed_roots=self.allowed_roots or None,
         )
         return result.get("response", "")
 
