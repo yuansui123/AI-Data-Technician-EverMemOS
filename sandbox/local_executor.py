@@ -60,7 +60,8 @@ class LocalSandboxSession:
             )
             return BashResult(stdout="", stderr=guard_error, returncode=-1)
 
-        merged_env = os.environ.copy()
+        _SENSITIVE_KEYS = {"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "EVERMEMOS_API_KEY"}
+        merged_env = {k: v for k, v in os.environ.items() if k not in _SENSITIVE_KEYS}
         if env:
             merged_env.update(env)
 

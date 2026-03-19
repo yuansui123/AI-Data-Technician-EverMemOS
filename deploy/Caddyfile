@@ -1,0 +1,11 @@
+# Replace with your domain or duckdns subdomain.
+# Caddy auto-provisions Let's Encrypt SSL certificates.
+#
+# Example with duckdns (free):
+#   1. Register at https://www.duckdns.org
+#   2. Create a subdomain, point it to your Elastic IP
+#   3. Replace the domain below
+
+your-subdomain.duckdns.org {
+    reverse_proxy localhost:8000
+}

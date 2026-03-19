@@ -43,7 +43,7 @@ MEMORY_UPDATE_INTERVAL = 5        # user messages between periodic Think memory 
 # ── Memory backend ────────────────────────────────────────────────────────────
 # Options: "file" | "evermemos_local" | "evermemos_cloud" | "hybrid"
 # "hybrid" writes to both file (git-trackable markdown) AND EverMemOS (semantic search)
-MEMORY_BACKEND = "hybrid"
+MEMORY_BACKEND = os.getenv("MEMORY_BACKEND", "evermemos_cloud")
 
 # ── Sandbox backend ───────────────────────────────────────────────────────────
 # Isolation is per user turn (orchestrator) and per task invocation.
@@ -61,7 +61,7 @@ _EVERMEMOS_URLS = {
     "evermemos_local": "http://localhost:1995/api/v1",
     "evermemos_cloud": "https://api.evermind.ai/api/v0",
 }
-EVERMEMOS_BASE_URL = _EVERMEMOS_URLS.get(MEMORY_BACKEND, _EVERMEMOS_URLS["evermemos_cloud"])
+EVERMEMOS_BASE_URL = os.getenv("EVERMEMOS_BASE_URL", _EVERMEMOS_URLS.get(MEMORY_BACKEND, _EVERMEMOS_URLS["evermemos_cloud"]))
 EVERMEMOS_API_KEY  = os.getenv("EVERMEMOS_API_KEY", "")  # only needed for cloud
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

@@ -406,7 +406,8 @@ function plotImgHtml(absPath) {
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => {
     // Send project/session selection as first message
     ws.send(JSON.stringify({type: 'init', project: currentProject, session_id: currentSessionId}));
