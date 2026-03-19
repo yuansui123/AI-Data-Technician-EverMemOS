@@ -5,7 +5,10 @@
 # AI Data Technician
 
 An agentic AI system that learns from scientist interaction to inspect, analyze, and classify high-dimensional time series data — with persistent memory that improves across sessions.
+
 **A video demonstration of the system can be found here: https://www.youtube.com/watch?v=k1L-xqT8Owo**
+
+**A deployable url available to try out system after your email gets approved: https://yue-crew-projects.org/**
 
 ---
 
