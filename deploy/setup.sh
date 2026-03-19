@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
 # EC2 one-time setup for AI Data Technician demo.
-# Run as ec2-user on Amazon Linux 2023.
+# Supports Ubuntu and Amazon Linux 2023.
 # Usage: bash deploy/setup.sh
 set -euo pipefail
 
 echo "=== AI Data Technician — EC2 Setup ==="
 
+# Detect package manager
+if command -v apt-get &>/dev/null; then
+    PKG="apt"
+elif command -v dnf &>/dev/null; then
+    PKG="dnf"
+else
+    echo "ERROR: Unsupported OS (no apt or dnf found)." && exit 1
+fi
+
 # ── 1. Install Docker ─────────────────────────────────────────────────────────
 if ! command -v docker &>/dev/null; then
     echo "[1/5] Installing Docker..."
-    sudo dnf install -y docker
+    if [ "$PKG" = "apt" ]; then
+        sudo apt-get update -y
+        sudo apt-get install -y docker.io
+    else
+        sudo dnf install -y docker
+    fi
     sudo systemctl enable --now docker
     sudo usermod -aG docker "$USER"
     echo "  Docker installed. You may need to log out/in for group changes."
@@ -20,9 +34,17 @@ fi
 # ── 2. Install Caddy ─────────────────────────────────────────────────────────
 if ! command -v caddy &>/dev/null; then
     echo "[2/5] Installing Caddy..."
-    sudo dnf install -y 'dnf-command(copr)'
-    sudo dnf copr enable -y @caddy/caddy
-    sudo dnf install -y caddy
+    if [ "$PKG" = "apt" ]; then
+        sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+        sudo apt-get update -y
+        sudo apt-get install -y caddy
+    else
+        sudo dnf install -y 'dnf-command(copr)'
+        sudo dnf copr enable -y @caddy/caddy
+        sudo dnf install -y caddy
+    fi
     echo "  Caddy installed."
 else
     echo "[2/5] Caddy already installed."
@@ -42,9 +64,8 @@ fi
 DATA_DIR="/data"
 if ! mountpoint -q "$DATA_DIR" 2>/dev/null; then
     echo "[4/5] Setting up EBS data volume..."
-    # Auto-detect the unformatted EBS volume (skip root volume)
     EBS_DEVICE=""
-    for dev in /dev/xvdf /dev/nvme1n1; do
+    for dev in /dev/xvdf /dev/xvdh /dev/nvme1n1; do
         if [ -b "$dev" ]; then
             EBS_DEVICE="$dev"
             break
@@ -52,17 +73,14 @@ if ! mountpoint -q "$DATA_DIR" 2>/dev/null; then
     done
 
     if [ -z "$EBS_DEVICE" ]; then
-        echo "  WARNING: No additional EBS volume found. Skipping mount."
-        echo "  Create $DATA_DIR manually if needed."
+        echo "  WARNING: No additional EBS volume found. Using /data on root volume."
         sudo mkdir -p "$DATA_DIR"
     else
-        # Only format if no filesystem exists
         if ! sudo blkid "$EBS_DEVICE" &>/dev/null; then
             sudo mkfs.xfs "$EBS_DEVICE"
         fi
         sudo mkdir -p "$DATA_DIR"
         sudo mount "$EBS_DEVICE" "$DATA_DIR"
-        # Add to fstab if not already there
         if ! grep -q "$DATA_DIR" /etc/fstab; then
             echo "$EBS_DEVICE $DATA_DIR xfs defaults,nofail 0 2" | sudo tee -a /etc/fstab
         fi
@@ -113,7 +131,7 @@ echo ""
 echo "  2. Edit /etc/caddy/Caddyfile with your domain/subdomain"
 echo ""
 echo "  3. Upload dataset:"
-echo "     scp -r MayoData1000/ ec2-user@<ip>:/data/datasets/"
+echo "     scp -r MayoData1000/ ubuntu@<ip>:/data/datasets/"
 echo ""
 echo "  4. Start services:"
 echo "     sudo systemctl start caddy"
