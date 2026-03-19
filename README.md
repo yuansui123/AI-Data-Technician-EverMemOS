@@ -145,6 +145,7 @@ The **memory gate** controls update frequency — rather than updating on every 
 ## Demo: iEEG Analysis (MayoData1000)
 
 The following screenshots are from a real analysis session on the [MayoData1000 multicenter iEEG dataset](https://doi.org/10.1038/s41597-020-0532-5) (1,000 intracranial EEG signals, 5 kHz, 3 seconds each, SOZ-labeled).
+Dataset link: https://springernature.figshare.com/articles/dataset/Dataset_Mayo/11734575?backTo=%2Fcollections%2FMulticenter_intracranial_EEG_dataset_for_classification_of_graphoelements_and_artifactual_signals%2F4681208&file=21359865
 
 ### 1. Explore — Visualize and inspect signals
 
