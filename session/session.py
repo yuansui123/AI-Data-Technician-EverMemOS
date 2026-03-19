@@ -38,9 +38,9 @@ class Session:
         self.turns.append({"role": "user", "content": user_input})
         self.turns.append({"role": "assistant", "content": response})
 
-    def replace_turns(self, turns: list[dict[str, str]]) -> None:
-        """Replace turn list (used by auto-compact)."""
-        self.turns = turns
+    def append_interrupted(self, user_input: str) -> None:
+        """Record a user turn that was interrupted before the agent responded."""
+        self.turns.append({"role": "user", "content": user_input, "interrupted": True})
 
     def oldest_turns(self, n: int) -> list[dict[str, str]]:
         return self.turns[:n]

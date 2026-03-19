@@ -48,8 +48,9 @@ async def _run_memory_update(
     """Call Think to update project_memory.md from recent conversation."""
     current_memory = await memory_backend.get_summary()
 
-    # Last ~10 turns (20 entries)
-    recent = session.turns[-20:] if len(session.turns) > 20 else session.turns
+    # Last ~10 turns (20 entries), skip interrupted turns
+    recent = [t for t in session.turns if not t.get("interrupted")]
+    recent = recent[-20:] if len(recent) > 20 else recent
     turns_text = "\n".join(
         f"[{t['role'].upper()}] {t.get('content', '')[:300]}" for t in recent
     )

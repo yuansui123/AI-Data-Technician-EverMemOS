@@ -593,10 +593,6 @@ async def run(
         # Persist carry-over facts
         session.context_carry = executor.carry
 
-        # Periodic memory update (runs every ~15 turns)
-        from orchestrator.memory_gate import maybe_update_memory
-        await maybe_update_memory(session, memory_backend)
-
         # Passive EverMemOS conversation logging (if available)
         if hasattr(memory_backend, 'store_chat_turn'):
             await memory_backend.store_chat_turn("user", user_input)

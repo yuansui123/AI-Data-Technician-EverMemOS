@@ -1229,11 +1229,17 @@ async def websocket_endpoint(ws: WebSocket):
                 response = orch_task.result()
                 session.append(user_input, response)
                 session.save()
+                # Memory update AFTER turn is appended so it sees the current exchange
+                from orchestrator.memory_gate import maybe_update_memory
+                await maybe_update_memory(session, memory_backend)
                 await ws.send_text(json.dumps({"type": "response", "content": response}))
             except WebSocketDisconnect:
                 orch_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await orch_task
+                # Save user turn so it's not lost, but don't fake an assistant response
+                session.append_interrupted(user_input)
+                session.save()
                 raise
             except Exception as exc:
                 if not orch_task.done():
@@ -1255,13 +1261,13 @@ async def websocket_endpoint(ws: WebSocket):
 
     except WebSocketDisconnect:
         # End-of-session reflection: update L2 project memory + promote to L3 global
-        if session is not None and project_dir is not None:
+        if session is not None and project_dir is not None and memory_backend is not None:
             try:
                 from orchestrator.reflection import end_of_session_reflection
-                from memory.backend import get_memory_backend, get_global_backend
+                from memory.backend import get_global_backend
                 await end_of_session_reflection(
                     session,
-                    get_memory_backend(project_dir),
+                    memory_backend,
                     get_global_backend(),
                 )
                 session.save()

@@ -64,18 +64,20 @@ async def build_context(
 
     total = _token_count(memory + _turns_text(turns))
 
+    # Build prompt-ready turns (compacted if needed) WITHOUT modifying session.turns.
+    # The session file keeps the full transcript for auditability.
     if total > AUTO_COMPACT_THRESHOLD and len(turns) > 10:
-        # deferred import to avoid circular dependency at load time
         from agents.think import compact_turns
 
         compact = await compact_turns(session.oldest_turns(20))
-        turns = [{"role": "summary", "content": compact}] + session.recent_turns(5)
-        session.replace_turns(turns)
+        prompt_turns = [{"role": "summary", "content": compact}] + session.recent_turns(5)
+    else:
+        prompt_turns = turns
 
     return {
         "memory": memory,
         "global_memory": global_memory[:2000] if global_memory else "",
-        "turns": turns,
+        "turns": prompt_turns,
         "todos": session.todos,
         "user_input": user_input,
         "context_carry": session.context_carry,
