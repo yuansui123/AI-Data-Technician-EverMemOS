@@ -67,28 +67,13 @@ class LocalSandboxSession:
 
         proc: asyncio.subprocess.Process | None = None
         try:
-            import sys as _sys
-
-            if _sys.platform == "win32":
-                proc = await asyncio.create_subprocess_exec(
-                    "powershell",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(resolved_cwd),
-                    env=merged_env,
-                )
-            else:
-                proc = await asyncio.create_subprocess_shell(
-                    cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(resolved_cwd),
-                    env=merged_env,
-                )
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(resolved_cwd),
+                env=merged_env,
+            )
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
         except asyncio.TimeoutError:
             if proc is not None and proc.returncode is None:

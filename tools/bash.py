@@ -75,23 +75,13 @@ async def bash(
 
     proc: asyncio.subprocess.Process | None = None
     try:
-        import sys as _sys
-        if _sys.platform == "win32":
-            proc = await asyncio.create_subprocess_exec(
-                "powershell", "-NoProfile", "-NonInteractive", "-Command", cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(resolved_cwd) if resolved_cwd else None,
-                env=merged_env,
-            )
-        else:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(resolved_cwd) if resolved_cwd else None,
-                env=merged_env,
-            )
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(resolved_cwd) if resolved_cwd else None,
+            env=merged_env,
+        )
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         if proc is not None and proc.returncode is None:
@@ -117,13 +107,10 @@ async def bash(
 def runtime_shell_label() -> str:
     """Human-readable shell label matching bash() runtime behavior."""
     import config
-    import sys as _sys
 
     backend = str(getattr(config, "SANDBOX_BACKEND", "local")).lower()
     if backend == "docker":
         return "Docker sandbox shell (`docker exec sh -lc`)"
-    if _sys.platform == "win32":
-        return "Windows PowerShell (`powershell -Command`)"
     return "POSIX shell (`/bin/sh -c`)"
 
 

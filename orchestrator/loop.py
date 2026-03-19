@@ -222,10 +222,7 @@ class OrchestratorToolExecutor:
             try:
                 mplconfig_dir = session_tmp / f"adt_mplconfig_{uuid4().hex}"
                 mplconfig_dir.mkdir(parents=True, exist_ok=True)
-                if sys.platform == "win32":
-                    cmd = f'& "{sys.executable}" "{plot_script}"'
-                else:
-                    cmd = f'"{sys.executable}" "{plot_script}"'
+                cmd = f'"{sys.executable}" "{plot_script}"'
                 result = await bash(
                     cmd,
                     cwd=str(p),

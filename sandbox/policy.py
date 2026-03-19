@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -83,7 +83,7 @@ def resolve_and_validate_cwd(
 
 
 def build_session_id(scope: str, parent_session_id: str | None = None) -> str:
-    now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    now = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     salt = uuid4().hex[:8]
     prefix = "".join(ch for ch in scope if ch.isalnum() or ch in ("-", "_")) or "sandbox"
     if parent_session_id:
