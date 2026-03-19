@@ -497,7 +497,9 @@ def _load_system_prompt(project_dir: Path, memory: str, global_memory: str = "")
             f"\n## Current Session Paths\n"
             f"- **Project directory:** `{project_dir}`\n"
             f"- **Save all generated plots and output files to:** `{tmp_dir}`\n"
-            "  (Never save to the source data directory.)"
+            "  (Never save to the source data directory.)\n"
+            f"- **Dataset directory:** `/data/datasets/`\n"
+            "  (Contains pre-loaded datasets. List this directory to discover available data.)"
         ),
         (
             f"\n## Runtime Environment\n"
@@ -533,7 +535,7 @@ async def run(
         project_dir=project_dir,
         scope="turn",
         parent_session_id=session.session_id,
-        allowed_roots=[project_dir],
+        allowed_roots=[project_dir, "/data/datasets"],
     )
 
     try:
